@@ -9,8 +9,7 @@ export default function Signup() {
     const [formData, setFormData] = useState({
         email: '',
         confirmEmail: '',
-        name: '',
-        registrationNumber: '',
+        phone: '',
         password: '',
         confirmPassword: ''
     });
@@ -30,19 +29,28 @@ export default function Signup() {
         e.preventDefault();
         setError('');
 
+        // Email confirmation check
         if (formData.email !== formData.confirmEmail) {
             setError('Email addresses do not match');
             return;
         }
 
+        // Password confirmation check
         if (formData.password !== formData.confirmPassword) {
             setError('Passwords do not match');
             return;
         }
 
+        // Password strength validation
         const passwordValidation = validatePassword(formData.password);
         if (!passwordValidation.isValid) {
             setError('Password does not meet requirements: ' + passwordValidation.errors[0]);
+            return;
+        }
+
+        // Phone validation
+        if (!/^\d{10}$/.test(formData.phone)) {
+            setError('Please enter a valid 10-digit phone number');
             return;
         }
 
@@ -51,10 +59,10 @@ export default function Signup() {
         try {
             await authApi.register({
                 email: formData.email,
-                name: formData.name,
-                registration_number: formData.registrationNumber,
+                phone: formData.phone,
                 password: formData.password
             });
+            // Redirect to OTP verification page
             navigate('/verify-email', { state: { email: formData.email } });
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Registration failed. Please try again.');
@@ -63,7 +71,9 @@ export default function Signup() {
         }
     };
 
+    // Check if emails match
     const emailsMatch = formData.confirmEmail === '' || formData.email === formData.confirmEmail;
+    // Check if passwords match
     const passwordsMatch = formData.confirmPassword === '' || formData.password === formData.confirmPassword;
 
     return (
@@ -86,43 +96,6 @@ export default function Signup() {
 
                 <form className="signup-form" onSubmit={handleSubmit}>
                     <div className="form-group">
-                        <label className="form-label">Full Name</label>
-                        <div className="input-wrapper">
-                            <svg className="input-icon" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                            </svg>
-                            <input
-                                type="text"
-                                name="name"
-                                className="form-input"
-                                placeholder="Your full name"
-                                value={formData.name}
-                                onChange={handleChange}
-                                required
-                                autoFocus
-                            />
-                        </div>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Registration Number</label>
-                        <div className="input-wrapper">
-                            <svg className="input-icon" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 2.5c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zM6 17.5v-1c0-2 4-3.1 6-3.1s6 1.1 6 3.1v1H6z" />
-                            </svg>
-                            <input
-                                type="text"
-                                name="registrationNumber"
-                                className="form-input"
-                                placeholder="e.g., 21BCE1234"
-                                value={formData.registrationNumber}
-                                onChange={handleChange}
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div className="form-group">
                         <label className="form-label">Email Address</label>
                         <div className="input-wrapper">
                             <svg className="input-icon" viewBox="0 0 24 24" fill="currentColor">
@@ -136,6 +109,7 @@ export default function Signup() {
                                 value={formData.email}
                                 onChange={handleChange}
                                 required
+                                autoFocus
                             />
                         </div>
                     </div>
@@ -160,6 +134,25 @@ export default function Signup() {
                                     {emailsMatch ? '✓' : '✗'}
                                 </span>
                             )}
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Phone Number</label>
+                        <div className="input-wrapper">
+                            <svg className="input-icon" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
+                            </svg>
+                            <input
+                                type="tel"
+                                name="phone"
+                                className="form-input"
+                                placeholder="10-digit phone number"
+                                value={formData.phone}
+                                onChange={handleChange}
+                                required
+                                maxLength={10}
+                            />
                         </div>
                     </div>
 
