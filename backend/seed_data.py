@@ -14,6 +14,26 @@ async def seed_database():
     await init_db()
     
     async with async_session_maker() as db:
+        # Create admin user
+        admin = User(
+            email="admin@autonex.ai",
+            hashed_password=get_password_hash("admin123"),
+            name="Admin",
+            registration_number="ADMIN001",
+            degree="Admin",
+            branch="Administration",
+            batch="2024",
+            college="Autonex",
+            role="admin",
+            neo_pat_score=0,
+            solved_easy=0,
+            solved_medium=0,
+            solved_hard=0,
+            badges_count=0,
+            super_badges_count=0
+        )
+        db.add(admin)
+        
         # Create demo user
         user = User(
             email="vinayak.shukla@gmail.com",
@@ -111,6 +131,7 @@ async def seed_database():
         
         await db.commit()
         print("✅ Database seeded successfully!")
+        print(f"   Admin user: admin@autonex.ai / admin123")
         print(f"   Demo user: {user.email} / password123")
 
 

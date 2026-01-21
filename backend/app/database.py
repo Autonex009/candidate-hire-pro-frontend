@@ -4,7 +4,16 @@ from .config import get_settings
 
 settings = get_settings()
 
-engine = create_async_engine(settings.database_url, echo=settings.debug)
+# Supabase uses PgBouncer in transaction mode, which doesn't support prepared statements
+# We need to disable statement caching for compatibility
+engine = create_async_engine(
+    settings.database_url, 
+    echo=settings.debug,
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+    }
+)
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 Base = declarative_base()

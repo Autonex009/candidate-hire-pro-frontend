@@ -1,0 +1,54 @@
+# Elastic Beanstalk deployment ignore file
+# EB will use this instead of .gitignore when deploying
+
+# Virtual environments (CRITICAL - do not upload local venv)
+.venv/
+venv/
+*.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local development files
+*.db
+.env.local
+.env.*.local
+
+# Frontend (backend only deployment)
+frontend/
+node_modules/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Documentation
+docs/
+*.md
+!README.md
