@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAntiCheat, useTestTimer } from '../../hooks/useAntiCheat';
+import { API_BASE_URL } from '../../services/api';
 import './TestTaking.css';
 
 interface Question {
@@ -66,7 +67,7 @@ export default function TestTaking() {
         if (!session) return;
         try {
             const token = localStorage.getItem('token');
-            await fetch(`http://localhost:8000/api/tests/flag-violation/${session.attempt_id}?violation_type=${type}`, {
+            await fetch(`${API_BASE_URL}/tests/flag-violation/${session.attempt_id}?violation_type=${type}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -82,7 +83,7 @@ export default function TestTaking() {
         const startTest = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('http://localhost:8000/api/tests/start', {
+                const response = await fetch(`${API_BASE_URL}/tests/start`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -135,7 +136,7 @@ export default function TestTaking() {
 
             // Submit all answers
             for (const [questionId, answerText] of Object.entries(answers)) {
-                await fetch(`http://localhost:8000/api/tests/submit-answer?attempt_id=${session.attempt_id}`, {
+                await fetch(`${API_BASE_URL}/tests/submit-answer?attempt_id=${session.attempt_id}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -149,7 +150,7 @@ export default function TestTaking() {
             }
 
             // Complete test
-            const response = await fetch(`http://localhost:8000/api/tests/complete/${session.attempt_id}`, {
+            const response = await fetch(`${API_BASE_URL}/tests/complete/${session.attempt_id}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`

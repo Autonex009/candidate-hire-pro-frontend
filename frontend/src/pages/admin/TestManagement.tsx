@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, memo, useRef, useMemo } from 'react';
-import { adminApiService } from '../../services/api';
+import { adminApiService, API_HOST } from '../../services/api';
 import {
     Video, Image, CheckSquare, Shuffle, BookOpen, Plus, Upload, FileSpreadsheet,
     Trash2, ChevronDown, ChevronRight, X, Eye, Wand2, ClipboardList, Library,
@@ -92,9 +92,9 @@ const QuestionCard = memo(({ question, onDelete }: { question: Question; onDelet
                         <div className="preview-block">
                             <label><Eye size={14} /> Media Preview</label>
                             {question.question_type === 'image' ? (
-                                <img src={question.media_url.startsWith('/') ? `http://localhost:8000${question.media_url}` : question.media_url} alt="Question media" className="preview-media-img" />
+                                <img src={question.media_url.startsWith('/') ? `${API_HOST}${question.media_url}` : question.media_url} alt="Question media" className="preview-media-img" />
                             ) : (
-                                <video src={question.media_url.startsWith('/') ? `http://localhost:8000${question.media_url}` : question.media_url} controls className="preview-media-video" />
+                                <video src={question.media_url.startsWith('/') ? `${API_HOST}${question.media_url}` : question.media_url} controls className="preview-media-video" />
                             )}
                         </div>
                     )}
@@ -637,7 +637,7 @@ export default function TestManagement() {
                                                     <input ref={fileInputRef} type="file" accept={selectedType === 'video' ? 'video/*' : 'image/*'} hidden onChange={handleFileUpload} />
                                                     {uploadedFileUrl ? (
                                                         <div className="upload-preview">
-                                                            {selectedType === 'image' ? <img src={`http://localhost:8000${uploadedFileUrl}`} alt="Preview" /> : <video src={`http://localhost:8000${uploadedFileUrl}`} controls />}
+                                                            {selectedType === 'image' ? <img src={`${API_HOST}${uploadedFileUrl}`} alt="Preview" /> : <video src={`${API_HOST}${uploadedFileUrl}`} controls />}
                                                             <button className="remove-btn" onClick={() => { setUploadedFileUrl(''); setQuestionForm(p => ({ ...p, media_url: '' })); }}><Trash2 size={16} /> Remove</button>
                                                         </div>
                                                     ) : (

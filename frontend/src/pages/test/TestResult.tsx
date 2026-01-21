@@ -1,5 +1,6 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { API_BASE_URL } from '../../services/api';
 import './TestResult.css';
 
 interface TestResult {
@@ -39,7 +40,7 @@ export default function TestResult() {
     const fetchResult = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch(`http://localhost:8000/api/tests/result/${attemptId}`, {
+            const response = await fetch(`${API_BASE_URL}/tests/result/${attemptId}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
