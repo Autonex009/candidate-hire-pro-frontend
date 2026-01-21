@@ -311,7 +311,11 @@ async def complete_test(
     attempt.percentage = percentage
     attempt.passed = passed
     attempt.completed_at = now
-    attempt.time_taken_seconds = int((now - attempt.started_at).total_seconds())
+    # Handle timezone-naive started_at from SQLite
+    started_at = attempt.started_at
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    attempt.time_taken_seconds = int((now - started_at).total_seconds())
     
     await db.commit()
     await db.refresh(attempt)
