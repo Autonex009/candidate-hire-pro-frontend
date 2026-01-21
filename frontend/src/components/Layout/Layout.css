@@ -1,0 +1,27 @@
+.layout {
+    display: flex;
+    min-height: 100vh;
+    background-color: var(--color-bg-primary);
+}
+
+.layout-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    margin-left: var(--sidebar-width);
+    min-height: 100vh;
+    transition: margin-left 0.3s ease;
+}
+
+.main-content {
+    flex: 1;
+    padding: var(--spacing-xl) var(--spacing-2xl);
+    margin-top: 70px;
+    overflow-y: auto;
+    background-color: var(--color-bg-primary);
+}
+
+/* When sidebar expands, content shifts */
+.layout:has(.sidebar:hover) .layout-body {
+    margin-left: var(--sidebar-expanded-width);
+}

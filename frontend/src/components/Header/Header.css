@@ -1,0 +1,204 @@
+.header {
+    position: fixed;
+    top: 0;
+    left: var(--sidebar-width);
+    right: 0;
+    height: 70px;
+    background: var(--color-bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--spacing-xl);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    z-index: 50;
+    transition: left 0.3s ease;
+}
+
+/* Adjust header when sidebar expands */
+.layout:has(.sidebar:hover) .header {
+    left: var(--sidebar-expanded-width);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-lg);
+}
+
+.header-title {
+    font-size: var(--font-lg);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.header-search {
+    flex: 1;
+    max-width: 450px;
+    margin: 0 var(--spacing-xl);
+}
+
+.search-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.search-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-text-muted);
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+}
+
+.search-input {
+    width: 100%;
+    height: 44px;
+    padding: 0 var(--spacing-md) 0 48px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    font-size: var(--font-sm);
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    transition: all 0.2s ease;
+}
+
+.search-input::placeholder {
+    color: var(--color-text-muted);
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.header-icon-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    background: var(--color-bg-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    transition: all 0.2s ease;
+}
+
+.header-icon-btn:hover {
+    background: rgba(67, 97, 238, 0.1);
+    color: var(--color-primary);
+}
+
+.header-icon-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+.profile-dropdown {
+    position: relative;
+    margin-left: var(--spacing-sm);
+}
+
+.header-profile {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+    padding: 6px 12px 6px 6px;
+    border-radius: var(--radius-full);
+    background: var(--color-bg-primary);
+    transition: all 0.2s ease;
+    border: 1px solid var(--color-border);
+}
+
+.header-profile:hover {
+    border-color: var(--color-primary);
+    background: rgba(67, 97, 238, 0.05);
+}
+
+.profile-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--color-bg-secondary);
+}
+
+.profile-name {
+    font-size: var(--font-sm);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.profile-arrow {
+    color: var(--color-text-muted);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: var(--color-bg-secondary);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    min-width: 180px;
+    padding: var(--spacing-sm) 0;
+    z-index: 200;
+    border: 1px solid var(--color-border-light);
+    animation: dropdownFade 0.15s ease;
+}
+
+@keyframes dropdownFade {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    width: 100%;
+    padding: 12px var(--spacing-md);
+    text-align: left;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: var(--font-sm);
+    color: var(--color-text-primary);
+    text-decoration: none;
+    transition: background 0.15s ease;
+}
+
+.dropdown-item:hover {
+    background: var(--color-bg-primary);
+}
+
+.dropdown-item.danger {
+    color: var(--color-error);
+}
+
+.dropdown-item.danger:hover {
+    background: var(--color-error-light);
+}

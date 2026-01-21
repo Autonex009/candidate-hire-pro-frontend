@@ -1,0 +1,115 @@
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: var(--sidebar-width);
+    height: 100vh;
+    background: linear-gradient(180deg, #4361EE 0%, #3A56D4 50%, #3249B8 100%);
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-md);
+    z-index: 100;
+    transition: width 0.3s ease;
+    overflow: hidden;
+}
+
+.sidebar:hover {
+    width: var(--sidebar-expanded-width);
+}
+
+/* Logo Container - Professional sizing */
+.sidebar-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-xs);
+    margin-bottom: var(--spacing-xl);
+    min-height: 48px;
+}
+
+.sidebar-logo img {
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-lg);
+    background: white;
+    object-fit: cover;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
+.sidebar-logo-text {
+    font-size: var(--font-lg);
+    font-weight: 700;
+    color: white;
+    margin-left: var(--spacing-sm);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar:hover .sidebar-logo-text {
+    opacity: 1;
+}
+
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    flex: 1;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: 12px 14px;
+    color: rgba(255, 255, 255, 0.75);
+    text-decoration: none;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.nav-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+.nav-item.active {
+    background: rgba(255, 255, 255, 0.25);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.nav-item svg {
+    min-width: 22px;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.nav-item span {
+    font-size: var(--font-sm);
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.2s ease 0.1s;
+}
+
+.sidebar:hover .nav-item span {
+    opacity: 1;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.sidebar-version {
+    font-size: var(--font-xs);
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    padding: var(--spacing-sm);
+}

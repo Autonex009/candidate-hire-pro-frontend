@@ -1,0 +1,177 @@
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { authApi } from './services/api';
+import type { User } from './types';
+
+// Candidate Components
+import Layout from './components/Layout/Layout';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import ProfileWizard from './pages/ProfileWizard';
+import Dashboard from './pages/Dashboard';
+import Jobs from './pages/Jobs';
+import Courses from './pages/Courses';
+import Assessments from './pages/Assessments';
+import Profile from './pages/Profile';
+
+// Test Components
+import TestsList from './pages/test/TestsList';
+import TestTaking from './pages/test/TestTaking';
+import TestResult from './pages/test/TestResult';
+
+// Admin Components
+import AdminLayout from './components/AdminLayout/AdminLayout';
+import AdminLogin from './pages/admin/AdminLogin';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import TestManagement from './pages/admin/TestManagement';
+import JobManagement from './pages/admin/JobManagement';
+import CandidatesPage from './pages/admin/CandidatesPage';
+import ReportsPage from './pages/admin/ReportsPage';
+
+
+import './index.css';
+
+function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    // Check candidate auth
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      try {
+        const userData = await authApi.getMe();
+        setUser(userData);
+        setIsAuthenticated(true);
+      } catch (error) {
+        localStorage.removeItem('access_token');
+        setIsAuthenticated(false);
+      }
+    }
+
+    // Check admin auth
+    const adminToken = localStorage.getItem('admin_token');
+    if (adminToken) {
+      setIsAdminAuthenticated(true);
+    }
+
+    setLoading(false);
+  };
+
+  const handleLogin = () => {
+    checkAuth();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    setUser(null);
+    setIsAuthenticated(false);
+  };
+
+  const handleAdminLogin = () => {
+    setIsAdminAuthenticated(true);
+  };
+
+  const handleAdminLogout = () => {
+    localStorage.removeItem('admin_token');
+    setIsAdminAuthenticated(false);
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: 'var(--color-bg-primary)'
+      }}>
+        <div className="spinner" style={{
+          width: 32,
+          height: 32,
+          border: '3px solid #e5e5e5',
+          borderTopColor: 'var(--color-primary)',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite'
+        }} />
+      </div>
+    );
+  }
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* ====== CANDIDATE ROUTES ====== */}
+
+        {/* Public Routes */}
+        <Route
+          path="/"
+          element={isAuthenticated ? <Navigate to="/dashboard" /> : <Login onLogin={handleLogin} />}
+        />
+        <Route
+          path="/signup"
+          element={isAuthenticated ? <Navigate to="/dashboard" /> : <Signup />}
+        />
+        <Route
+          path="/complete-profile"
+          element={<ProfileWizard />}
+        />
+
+        {/* Protected Candidate Routes */}
+        {isAuthenticated ? (
+          <Route element={<Layout user={user} onLogout={handleLogout} />}>
+            <Route path="/dashboard" element={<Dashboard user={user} />} />
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/courses" element={<Courses />} />
+            <Route path="/assessments" element={<Assessments />} />
+            <Route path="/company-tests" element={<Assessments />} />
+            <Route path="/profile" element={<Profile user={user} />} />
+            <Route path="/ide" element={<div className="dashboard"><h1>Open IDE</h1><p>IDE integration coming soon...</p></div>} />
+            <Route path="/tests" element={<TestsList />} />
+          </Route>
+        ) : null}
+
+        {/* Test Taking Routes (protected but outside layout for fullscreen) */}
+        {isAuthenticated && (
+          <>
+            <Route path="/test/:testId" element={<TestTaking />} />
+            <Route path="/test-result/:attemptId" element={<TestResult />} />
+          </>
+        )}
+
+        {/* ====== ADMIN ROUTES ====== */}
+
+        {/* Admin Login */}
+        <Route
+          path="/admin/login"
+          element={isAdminAuthenticated ? <Navigate to="/admin" /> : <AdminLogin onLogin={handleAdminLogin} />}
+        />
+
+        {/* Protected Admin Routes */}
+        {isAdminAuthenticated ? (
+          <Route path="/admin" element={<AdminLayout onLogout={handleAdminLogout} />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="tests" element={<TestManagement />} />
+
+            <Route path="jobs" element={<JobManagement />} />
+            <Route path="candidates" element={<CandidatesPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+          </Route>
+        ) : (
+          <Route path="/admin/*" element={<Navigate to="/admin/login" />} />
+        )}
+
+        {/* Catch all */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
