@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../services/api';
 import './TestsList.css';
 
 interface AvailableTest {
@@ -28,7 +29,7 @@ export default function TestsList() {
     const fetchTests = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:8000/api/tests/available', {
+            const response = await fetch(`${API_BASE_URL}/tests/available`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }

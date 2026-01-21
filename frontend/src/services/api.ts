@@ -1,7 +1,10 @@
 import axios from 'axios';
 import type { AuthToken, LoginCredentials, User, Job, JobStats, Course, CourseEnrollment, CourseStats, Assessment, AssessmentStats, Badge } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+// API configuration - uses VITE_API_URL env variable, falls back to localhost for dev
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+// Extract host for media URLs (removes /api suffix)
+export const API_HOST = API_BASE_URL.replace('/api', '');
 
 const api = axios.create({
     baseURL: API_BASE_URL,
@@ -113,9 +116,9 @@ export const assessmentsApi = {
     },
 };
 
-// Admin API
+// Admin API - uses same base URL with /admin suffix
 const adminApi = axios.create({
-    baseURL: 'http://localhost:8000/api/admin',
+    baseURL: `${API_BASE_URL}/admin`,
     headers: {
         'Content-Type': 'application/json',
     },
