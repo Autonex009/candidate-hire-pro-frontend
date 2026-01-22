@@ -295,4 +295,53 @@ export const adminApiService = {
     },
 };
 
+// Profile API (Resume Parsing)
+export const profileApi = {
+    uploadResume: async (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await api.post('/profile/upload-resume', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+
+    getMyProfile: async () => {
+        const response = await api.get('/profile/me');
+        return response.data;
+    },
+
+    updateProfile: async (data: {
+        professional_summary?: string;
+        linkedin_url?: string;
+        github_url?: string;
+        portfolio_url?: string;
+        location?: string;
+        years_of_experience?: number;
+        current_role?: string;
+        current_company?: string;
+        leetcode_username?: string;
+        codechef_username?: string;
+        codeforces_username?: string;
+    }) => {
+        const response = await api.put('/profile/me', data);
+        return response.data;
+    },
+
+    getSkills: async (search?: string) => {
+        const response = await api.get('/profile/skills', { params: { search } });
+        return response.data;
+    },
+
+    addLanguage: async (data: { language: string; proficiency: string }) => {
+        const response = await api.post('/profile/me/languages', data);
+        return response.data;
+    },
+
+    removeLanguage: async (languageId: number) => {
+        const response = await api.delete(`/profile/me/languages/${languageId}`);
+        return response.data;
+    },
+};
+
 export default api;

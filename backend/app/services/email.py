@@ -24,7 +24,7 @@ conf = ConnectionConfig(
     MAIL_STARTTLS=settings.mail_starttls,
     MAIL_SSL_TLS=settings.mail_ssl_tls,
     USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True,
+    VALIDATE_CERTS=settings.mail_validate_certs,
     TEMPLATE_FOLDER=Path(__file__).parent.parent / "templates" / "emails"
 )
 

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     mail_server: str = "smtp.gmail.com"
     mail_starttls: bool = True
     mail_ssl_tls: bool = False
+    mail_validate_certs: bool = True  # Set to False locally if SSL cert issues
     
     # Frontend URL for email links
     frontend_url: str = "http://localhost:5173"
@@ -38,6 +39,15 @@ class Settings(BaseSettings):
     # OTP Settings
     otp_expire_minutes: int = 10
     reset_token_expire_minutes: int = 60
+    
+    # AI/LLM Configuration
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+    
+    # Vector Search (Pinecone)
+    pinecone_api_key: str = ""
+    pinecone_index_name: str = "candidate-profiles"
+    pinecone_environment: str = "us-east-1"
 
     class Config:
         env_file = ".env"

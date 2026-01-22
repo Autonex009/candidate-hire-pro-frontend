@@ -4,6 +4,12 @@ from .course import Course, CourseEnrollment
 from .assessment import Assessment, AssessmentAttempt, Badge
 from .test import Division, Question, QuestionType, Test, TestQuestion, TestAttempt, UserAnswer
 from .message import Message
+from .profile import (
+    CandidateProfile, Skill, Education, WorkExperience, Project,
+    Certification, Publication, Award, UserLanguage,
+    SkillCategory, ProficiencyLevel, LanguageProficiency,
+    profile_skills
+)
 
 __all__ = [
     "User", "UserRole",
@@ -11,6 +17,10 @@ __all__ = [
     "Course", "CourseEnrollment",
     "Assessment", "AssessmentAttempt", "Badge",
     "Division", "Question", "QuestionType", "Test", "TestQuestion", "TestAttempt", "UserAnswer",
-    "Message"
+    "Message",
+    # Profile models
+    "CandidateProfile", "Skill", "Education", "WorkExperience", "Project",
+    "Certification", "Publication", "Award", "UserLanguage",
+    "SkillCategory", "ProficiencyLevel", "LanguageProficiency",
+    "profile_skills"
 ]
-

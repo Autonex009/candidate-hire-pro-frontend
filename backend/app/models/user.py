@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum as SQLEnum
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
 import enum
@@ -44,3 +45,6 @@ class User(Base):
     solved_hard = Column(Integer, default=0)
     badges_count = Column(Integer, default=0)
     super_badges_count = Column(Integer, default=0)
+    
+    # Relationships
+    profile = relationship("CandidateProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
