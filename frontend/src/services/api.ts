@@ -347,6 +347,17 @@ export const profileApi = {
         return response.data;
     },
 
+    completeProfile: async (fullName: string, knowsDataAnnotation: string, whyAnnotation: string) => {
+        const response = await api.post('/profile/complete-profile', null, {
+            params: {
+                full_name: fullName,
+                knows_data_annotation: knowsDataAnnotation,
+                why_annotation: whyAnnotation
+            }
+        });
+        return response.data;
+    },
+
     getMyProfile: async () => {
         const response = await api.get('/profile/me');
         return response.data;

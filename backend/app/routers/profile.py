@@ -84,6 +84,36 @@ async def get_profile_with_relations(db: AsyncSession, user_id: int) -> Optional
 # Profile Endpoints
 # ============================================================================
 
+@router.post("/complete-profile")
+async def complete_profile(
+    full_name: str,
+    knows_data_annotation: str = "no",  # "yes" or "no"
+    why_annotation: str = "",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Complete initial profile setup - saves all onboarding wizard data.
+    Called during onboarding wizard.
+    """
+    # Update user's name
+    current_user.name = full_name.strip()
+    
+    # Create profile if doesn't exist
+    profile = await get_profile_with_relations(db, current_user.id)
+    if not profile:
+        profile = CandidateProfile(user_id=current_user.id)
+        db.add(profile)
+        await db.flush()
+    
+    # Save wizard answers to profile
+    profile.has_data_annotation_experience = (knows_data_annotation.lower() == "yes")
+    profile.why_annotation = why_annotation.strip() if why_annotation else None
+    
+    await db.commit()
+    
+    return {"success": True, "message": "Profile setup complete"}
+
 @router.post("/upload-resume", response_model=ProfileResponse)
 async def upload_resume(
     file: UploadFile = File(...),

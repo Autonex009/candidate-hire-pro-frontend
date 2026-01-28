@@ -124,6 +124,10 @@ class ProfileResponse(BaseModel):
     codechef_username: Optional[str] = None
     codeforces_username: Optional[str] = None
     
+    # Onboarding wizard data
+    has_data_annotation_experience: Optional[bool] = None
+    why_annotation: Optional[str] = None
+    
     education: List[EducationResponse] = Field(default_factory=list)
     work_experience: List[WorkExperienceResponse] = Field(default_factory=list)
     projects: List[ProjectResponse] = Field(default_factory=list)

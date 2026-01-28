@@ -327,7 +327,10 @@ export default function CandidateProfile({ user: _user }: ProfileProps) {
                                     profile.education.map(edu => (
                                         <div key={edu.id} className="entry-card">
                                             <h4>{edu.school}</h4>
-                                            <p className="degree">{edu.degree} {edu.field_of_study ? `in ${edu.field_of_study}` : ''}</p>
+                                            <p className="degree">
+                                                {edu.degree}
+                                                {edu.field_of_study && !edu.degree?.toLowerCase().includes(edu.field_of_study.toLowerCase()) && ` in ${edu.field_of_study}`}
+                                            </p>
                                             <p className="dates">
                                                 {edu.start_year} - {edu.end_year || 'Present'}
                                                 {edu.gpa && <span className="gpa">GPA: {edu.gpa}</span>}

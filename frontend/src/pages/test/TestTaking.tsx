@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAntiCheat, useTestTimer } from '../../hooks/useAntiCheat';
 import { API_BASE_URL, API_HOST } from '../../services/api';
@@ -46,7 +46,7 @@ export default function TestTaking() {
     const [session, setSession] = useState<TestSession | null>(null);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [answers, setAnswers] = useState<Record<number, string>>({});
-    const [fileAnswers, setFileAnswers] = useState<Record<number, File>>({});
+    const [globalAnswerFile, setGlobalAnswerFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showWarning, setShowWarning] = useState(false);
@@ -232,27 +232,38 @@ export default function TestTaking() {
         }
     };
 
-    // Submit test
-    const handleSubmitTest = async () => {
-        if (!session) return;
+    // Submit test - with double-submit protection
+    const isSubmittedRef = useRef(false);
 
+    const handleSubmitTest = async () => {
+        // Prevent double-submission
+        if (!session || submitting || isSubmittedRef.current) {
+            console.log('Submission blocked: already submitting or submitted');
+            return;
+        }
+
+        isSubmittedRef.current = true; // Mark as submitted
         setSubmitting(true);
+
         try {
             const token = localStorage.getItem('access_token');
             if (!token) {
                 alert('Session expired. Please login again.');
+                isSubmittedRef.current = false;
                 return;
             }
 
-            // Upload files first (for agent_analysis questions)
-            const failedUploads: string[] = [];
-
-            for (const [questionId, file] of Object.entries(fileAnswers)) {
+            // Upload global answer file (single file for all questions)
+            if (globalAnswerFile) {
                 try {
+                    // Find first agent_analysis question ID for the file
+                    const firstAgentQ = session.questions.find(q => q.question_type === 'agent_analysis');
+                    const questionId = firstAgentQ?.id || session.questions[0].id;
+
                     const formData = new FormData();
-                    formData.append('file', file);
+                    formData.append('file', globalAnswerFile);
                     formData.append('attempt_id', session.attempt_id.toString());
-                    formData.append('question_id', questionId);
+                    formData.append('question_id', questionId.toString());
 
                     const res = await fetch(`${API_BASE_URL}/tests/upload-answer-file`, {
                         method: 'POST',
@@ -263,43 +274,44 @@ export default function TestTaking() {
                     });
 
                     if (!res.ok) {
-                        failedUploads.push(`Question ${questionId}: Server Error`);
-                        throw new Error(`File upload failed for Q${questionId}`);
+                        throw new Error('File upload failed');
                     }
                 } catch (e) {
                     console.error('File upload failed', e);
-                    failedUploads.push(`Question ${questionId}: ${e instanceof Error ? e.message : 'Network Error'}`);
+                    alert('Failed to upload your Excel file. Please try again.');
+                    isSubmittedRef.current = false;
+                    setSubmitting(false);
+                    return;
                 }
             }
 
-            if (failedUploads.length > 0) {
-                alert(`Cannot submit test yet. The following files failed to upload:\n\n${failedUploads.join('\n')}\n\nPlease try again.`);
-                setSubmitting(false);
-                return; // ABORT SUBMISSION
-            }
+            // Submit all text answers IN PARALLEL for speed
+            const answerPromises = Object.entries(answers)
+                .filter(([_, answerText]) => !answerText.startsWith('FILE:'))
+                .map(async ([questionId, answerText]) => {
+                    try {
+                        const res = await fetch(`${API_BASE_URL}/tests/submit-answer?attempt_id=${session.attempt_id}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({
+                                question_id: parseInt(questionId),
+                                answer_text: answerText
+                            })
+                        });
+                        if (!res.ok) throw new Error(`Q${questionId} failed`);
+                        return { questionId, success: true };
+                    } catch (e) {
+                        console.error(`Failed to submit answer for question ${questionId}`, e);
+                        return { questionId, success: false };
+                    }
+                });
 
-            // Submit all text answers
-            for (const [questionId, answerText] of Object.entries(answers)) {
-                // Skip file answers (they're already uploaded)
-                if (answerText.startsWith('FILE:')) continue;
+            // Wait for all answers to submit (don't fail on individual errors)
+            await Promise.allSettled(answerPromises);
 
-                try {
-                    await fetch(`${API_BASE_URL}/tests/submit-answer?attempt_id=${session.attempt_id}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
-                            question_id: parseInt(questionId),
-                            answer_text: answerText
-                        })
-                    });
-                } catch (e) {
-                    console.error(`Failed to submit answer for question ${questionId}`, e);
-                    // Continue with other answers
-                }
-            }
 
             // Complete test
             const response = await fetch(`${API_BASE_URL}/tests/complete/${session.attempt_id}`, {
@@ -415,181 +427,182 @@ export default function TestTaking() {
             <div className="test-content">
                 {/* Sidebar Removed */}
 
-                {/* Question Display */}
+                {/* Question Display - All questions mounted, only active visible (for instant switching) */}
                 <main className="question-area">
-                    <div className="question-card">
-                        <div className="question-header">
-                            <span className="question-type">{currentQuestion.question_type.toUpperCase()}</span>
-                            <span className="question-marks">{currentQuestion.marks} marks</span>
-                        </div>
-
-                        <div className="question-text">
-                            {currentQuestion.question_text}
-                        </div>
-
-                        {/* MCQ Options */}
-                        {currentQuestion.question_type === 'mcq' && currentQuestion.options && (
-                            <div className="options-list">
-                                {currentQuestion.options.map((option, idx) => (
-                                    <label
-                                        key={idx}
-                                        className={`option-item ${answers[currentQuestion.id] === option ? 'selected' : ''}`}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name={`question-${currentQuestion.id}`}
-                                            value={option}
-                                            checked={answers[currentQuestion.id] === option}
-                                            onChange={() => handleSelectAnswer(currentQuestion.id, option)}
-                                        />
-                                        <span className="option-letter">{String.fromCharCode(65 + idx)}</span>
-                                        <span className="option-text">{option}</span>
-                                    </label>
-                                ))}
+                    {session.questions.map((question, qIndex) => (
+                        <div
+                            key={question.id}
+                            className="question-card"
+                            style={{ display: qIndex === currentQuestionIndex ? 'block' : 'none' }}
+                        >
+                            <div className="question-header">
+                                <span className="question-type">{question.question_type.toUpperCase()}</span>
+                                <span className="question-marks">{question.marks} marks</span>
                             </div>
-                        )}
 
-                        {/* Text Annotation */}
-                        {(currentQuestion.question_type === 'text_annotation' || currentQuestion.question_type === 'text' || currentQuestion.question_type === 'reading') && (
-                            <div className="text-annotation-area">
-                                <textarea
-                                    placeholder="Enter your annotation..."
-                                    value={answers[currentQuestion.id] || ''}
-                                    onChange={(e) => handleSelectAnswer(currentQuestion.id, e.target.value)}
-                                    rows={6}
-                                />
+                            <div className="question-text">
+                                {question.question_text}
                             </div>
-                        )}
 
-                        {/* Image Annotation */}
-                        {(currentQuestion.question_type === 'image_annotation' || currentQuestion.question_type === 'image') && (
-                            <div className="image-annotation-area">
-                                {currentQuestion.media_url && (
-                                    <img src={getMediaUrl(currentQuestion.media_url)} alt="Annotation target" />
-                                )}
-                                <textarea
-                                    placeholder="Describe what you see in the image..."
-                                    value={answers[currentQuestion.id] || ''}
-                                    onChange={(e) => handleSelectAnswer(currentQuestion.id, e.target.value)}
-                                    rows={4}
-                                />
-                            </div>
-                        )}
-
-                        {/* Video Annotation */}
-                        {(currentQuestion.question_type === 'video_annotation' || currentQuestion.question_type === 'video') && (
-                            <div className="video-annotation-area">
-                                {currentQuestion.media_url && (
-                                    <video controls>
-                                        <source src={getMediaUrl(currentQuestion.media_url)} type="video/mp4" />
-                                        Your browser does not support video playback.
-                                    </video>
-                                )}
-                                <textarea
-                                    placeholder="Describe what you observed in the video..."
-                                    value={answers[currentQuestion.id] || ''}
-                                    onChange={(e) => handleSelectAnswer(currentQuestion.id, e.target.value)}
-                                    rows={4}
-                                />
-                            </div>
-                        )}
-
-                        {/* Agent Analysis */}
-                        {currentQuestion.question_type === 'agent_analysis' && (
-                            <div className="agent-analysis-area">
-                                <InPageBrowser
-                                    htmlUrl={
-                                        currentQuestion.html_content?.startsWith('/') ||
-                                            currentQuestion.html_content?.startsWith('http')
-                                            ? (currentQuestion.html_content.startsWith('/')
-                                                ? getMediaUrl(currentQuestion.html_content)
-                                                : `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/tests/content-proxy?url=${encodeURIComponent(currentQuestion.html_content)}`)
-                                            : undefined
-                                    }
-                                    htmlContent={
-                                        currentQuestion.html_content?.startsWith('/') ||
-                                            currentQuestion.html_content?.startsWith('http')
-                                            ? undefined
-                                            : currentQuestion.html_content || ''
-                                    }
-                                    documents={(currentQuestion.documents || []).map(d => {
-                                        const isOffice = /\.(docx?|xlsx?|pptx?)$/i.test(d.content || '');
-                                        let contentUrl = d.content;
-
-                                        if (d.content?.startsWith('/')) {
-                                            contentUrl = getMediaUrl(d.content);
-                                        } else if (d.content?.startsWith('http')) {
-                                            if (isOffice) {
-                                                // Use MS Office Viewer for Office files (better compatibility)
-                                                contentUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(d.content)}`;
-                                            } else {
-                                                // Use proxy for others (HTML, PDF, etc)
-                                                contentUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/tests/content-proxy?url=${encodeURIComponent(d.content)}`;
-                                            }
-                                        }
-
-                                        return {
-                                            id: d.id,
-                                            title: d.title,
-                                            content: contentUrl
-                                        };
-                                    })}
-                                />
-                                <div className="agent-answer-section">
-                                    <label>Upload Your Report</label>
-                                    <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
-                                        Submit your analysis as an Excel file (.xlsx, .xls, .csv)
-                                    </p>
-                                    <div className="file-upload-area">
-                                        <input
-                                            type="file"
-                                            id={`file-upload-${currentQuestion.id}`}
-                                            accept=".xlsx,.xls,.csv"
-                                            onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                    // Store file name as answer display
-                                                    handleSelectAnswer(currentQuestion.id, `FILE:${file.name}`);
-                                                    // Store actual file for upload
-                                                    setFileAnswers(prev => ({ ...prev, [currentQuestion.id]: file }));
-                                                }
-                                            }}
-                                            style={{ display: 'none' }}
-                                        />
+                            {/* MCQ Options */}
+                            {question.question_type === 'mcq' && question.options && (
+                                <div className="options-list">
+                                    {question.options.map((option, idx) => (
                                         <label
-                                            htmlFor={`file-upload-${currentQuestion.id}`}
-                                            className="file-upload-label"
-                                            style={{
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center',
-                                                padding: '24px',
-                                                border: '2px dashed #e2e8f0',
-                                                borderRadius: '12px',
-                                                cursor: 'pointer',
-                                                background: '#f8fafc',
-                                                transition: 'all 0.2s'
-                                            }}
+                                            key={idx}
+                                            className={`option-item ${answers[question.id] === option ? 'selected' : ''}`}
                                         >
-                                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="1.5">
-                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                                <polyline points="17 8 12 3 7 8" />
-                                                <line x1="12" y1="3" x2="12" y2="15" />
-                                            </svg>
-                                            <span style={{ marginTop: '8px', fontWeight: 600, color: '#1e293b' }}>
-                                                {answers[currentQuestion.id]?.startsWith('FILE:')
-                                                    ? answers[currentQuestion.id].replace('FILE:', '✅ ')
-                                                    : 'Click to upload Excel file'}
-                                            </span>
-                                            <span style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
-                                                Supports .xlsx, .xls, .csv
-                                            </span>
+                                            <input
+                                                type="radio"
+                                                name={`question-${question.id}`}
+                                                value={option}
+                                                checked={answers[question.id] === option}
+                                                onChange={() => handleSelectAnswer(question.id, option)}
+                                            />
+                                            <span className="option-letter">{String.fromCharCode(65 + idx)}</span>
+                                            <span className="option-text">{option}</span>
                                         </label>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Text Annotation */}
+                            {(question.question_type === 'text_annotation' || question.question_type === 'text' || question.question_type === 'reading') && (
+                                <div className="text-annotation-area">
+                                    <textarea
+                                        placeholder="Enter your annotation..."
+                                        value={answers[question.id] || ''}
+                                        onChange={(e) => handleSelectAnswer(question.id, e.target.value)}
+                                        rows={6}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Image Annotation */}
+                            {(question.question_type === 'image_annotation' || question.question_type === 'image') && (
+                                <div className="image-annotation-area">
+                                    {question.media_url && (
+                                        <img src={getMediaUrl(question.media_url)} alt="Annotation target" />
+                                    )}
+                                    <textarea
+                                        placeholder="Describe what you see in the image..."
+                                        value={answers[question.id] || ''}
+                                        onChange={(e) => handleSelectAnswer(question.id, e.target.value)}
+                                        rows={4}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Video Annotation */}
+                            {(question.question_type === 'video_annotation' || question.question_type === 'video') && (
+                                <div className="video-annotation-area">
+                                    {question.media_url && (
+                                        <video controls>
+                                            <source src={getMediaUrl(question.media_url)} type="video/mp4" />
+                                            Your browser does not support video playback.
+                                        </video>
+                                    )}
+                                    <textarea
+                                        placeholder="Describe what you observed in the video..."
+                                        value={answers[question.id] || ''}
+                                        onChange={(e) => handleSelectAnswer(question.id, e.target.value)}
+                                        rows={4}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Agent Analysis */}
+                            {question.question_type === 'agent_analysis' && (
+                                <div className="agent-analysis-area">
+                                    <InPageBrowser
+                                        htmlUrl={
+                                            question.html_content?.startsWith('/') ||
+                                                question.html_content?.startsWith('http')
+                                                ? (question.html_content.startsWith('/')
+                                                    ? getMediaUrl(question.html_content)
+                                                    : `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/tests/content-proxy?url=${encodeURIComponent(question.html_content)}`)
+                                                : undefined
+                                        }
+                                        htmlContent={
+                                            question.html_content?.startsWith('/') ||
+                                                question.html_content?.startsWith('http')
+                                                ? undefined
+                                                : question.html_content || ''
+                                        }
+                                        documents={(question.documents || []).map(d => {
+                                            const isOffice = /\.(docx?|xlsx?|pptx?)$/i.test(d.content || '');
+                                            let contentUrl = d.content;
+
+                                            if (d.content?.startsWith('/')) {
+                                                contentUrl = getMediaUrl(d.content);
+                                            } else if (d.content?.startsWith('http')) {
+                                                if (isOffice) {
+                                                    contentUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(d.content)}`;
+                                                } else {
+                                                    contentUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/tests/content-proxy?url=${encodeURIComponent(d.content)}`;
+                                                }
+                                            }
+
+                                            return {
+                                                id: d.id,
+                                                title: d.title,
+                                                content: contentUrl
+                                            };
+                                        })}
+                                    />
+                                    <div className="agent-answer-section">
+                                        <label>Upload Your Final Report</label>
+                                        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
+                                            Submit ONE Excel file with all your answers for all questions
+                                        </p>
+                                        <div className="file-upload-area">
+                                            <input
+                                                type="file"
+                                                id="global-file-upload"
+                                                accept=".xlsx,.xls,.csv"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                        setGlobalAnswerFile(file);
+                                                    }
+                                                }}
+                                                style={{ display: 'none' }}
+                                            />
+                                            <label
+                                                htmlFor="global-file-upload"
+                                                className="file-upload-label"
+                                                style={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    padding: '24px',
+                                                    border: globalAnswerFile ? '2px solid #22c55e' : '2px dashed #e2e8f0',
+                                                    borderRadius: '12px',
+                                                    cursor: 'pointer',
+                                                    background: globalAnswerFile ? '#f0fdf4' : '#f8fafc',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={globalAnswerFile ? '#22c55e' : '#64748b'} strokeWidth="1.5">
+                                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                                    <polyline points="17 8 12 3 7 8" />
+                                                    <line x1="12" y1="3" x2="12" y2="15" />
+                                                </svg>
+                                                <span style={{ marginTop: '8px', fontWeight: 600, color: globalAnswerFile ? '#16a34a' : '#1e293b' }}>
+                                                    {globalAnswerFile
+                                                        ? `✅ ${globalAnswerFile.name}`
+                                                        : 'Click to upload Excel file'}
+                                                </span>
+                                                <span style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                                                    Supports .xlsx, .xls, .csv
+                                                </span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    ))}
 
                     {/* Navigation Buttons */}
                     <div className="question-actions">

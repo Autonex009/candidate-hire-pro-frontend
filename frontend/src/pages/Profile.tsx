@@ -196,7 +196,8 @@ export default function Profile({ user }: ProfileProps) {
                                             <div>
                                                 <h4 className="entry-title">{edu.school}</h4>
                                                 <p className="entry-subtitle">
-                                                    {edu.degree} {edu.field_of_study && `in ${edu.field_of_study}`}
+                                                    {edu.degree}
+                                                    {edu.field_of_study && !edu.degree?.toLowerCase().includes(edu.field_of_study.toLowerCase()) && ` in ${edu.field_of_study}`}
                                                 </p>
                                             </div>
                                             {edu.gpa && (

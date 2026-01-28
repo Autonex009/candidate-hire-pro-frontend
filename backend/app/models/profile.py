@@ -77,6 +77,10 @@ class CandidateProfile(Base):
     codechef_username = Column(String(100), nullable=True)
     codeforces_username = Column(String(100), nullable=True)
     
+    # Onboarding wizard data
+    has_data_annotation_experience = Column(Boolean, nullable=True)
+    why_annotation = Column(Text, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
