@@ -245,6 +245,8 @@ export default function TestTaking() {
             }
 
             // Upload files first (for agent_analysis questions)
+            const failedUploads: string[] = [];
+
             for (const [questionId, file] of Object.entries(fileAnswers)) {
                 try {
                     const formData = new FormData();
@@ -260,11 +262,20 @@ export default function TestTaking() {
                         body: formData
                     });
 
-                    if (!res.ok) throw new Error('File upload failed');
+                    if (!res.ok) {
+                        failedUploads.push(`Question ${questionId}: Server Error`);
+                        throw new Error(`File upload failed for Q${questionId}`);
+                    }
                 } catch (e) {
                     console.error('File upload failed', e);
-                    // Continue with other submissions
+                    failedUploads.push(`Question ${questionId}: ${e instanceof Error ? e.message : 'Network Error'}`);
                 }
+            }
+
+            if (failedUploads.length > 0) {
+                alert(`Cannot submit test yet. The following files failed to upload:\n\n${failedUploads.join('\n')}\n\nPlease try again.`);
+                setSubmitting(false);
+                return; // ABORT SUBMISSION
             }
 
             // Submit all text answers
