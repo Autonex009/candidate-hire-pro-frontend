@@ -4,15 +4,33 @@ Stores profile embeddings and enables intelligent HR search.
 """
 import json
 from typing import List, Optional, Dict, Any
-from google import genai
 from pinecone import Pinecone, ServerlessSpec
 
 from ..config import get_settings
 
 settings = get_settings()
 
-# Configure Gemini client for embeddings
-client = genai.Client(api_key=settings.gemini_api_key)
+# Lazy initialization of Gemini client
+_genai_client = None
+
+def get_genai_client():
+    """Get the Gemini client, initializing lazily if needed."""
+    global _genai_client
+    if _genai_client is None:
+        try:
+            from google import genai
+            if settings.gemini_api_key:
+                _genai_client = genai.Client(api_key=settings.gemini_api_key)
+            else:
+                print("WARNING: GEMINI_API_KEY not set - embeddings disabled")
+                return None
+        except ImportError:
+            print("WARNING: google-genai package not installed - embeddings disabled")
+            return None
+        except Exception as e:
+            print(f"WARNING: Failed to initialize Gemini client: {e}")
+            return None
+    return _genai_client
 
 
 class VectorSearchService:
@@ -71,6 +89,9 @@ class VectorSearchService:
         Returns:
             List of floats representing the embedding vector
         """
+        client = get_genai_client()
+        if not client:
+            return [0.0] * 768  # Return zero vector if client unavailable
         result = client.models.embed_content(
             model="text-embedding-004",
             contents=text,
@@ -81,6 +102,9 @@ class VectorSearchService:
         """
         Generate embedding for search query using Gemini.
         """
+        client = get_genai_client()
+        if not client:
+            return [0.0] * 768  # Return zero vector if client unavailable
         result = client.models.embed_content(
             model="text-embedding-004",
             contents=text,
@@ -256,6 +280,11 @@ Examples:
 
 Now extract:"""
 
+    client = get_genai_client()
+    if not client:
+        return {"skills": [], "min_years": None, "role": None, "other_requirements": None}
+    
+    from google import genai
     response = client.models.generate_content(
         model=settings.gemini_model,
         contents=prompt,

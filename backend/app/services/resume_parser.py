@@ -8,14 +8,32 @@ import base64
 from typing import List, Optional
 from pydantic import BaseModel, Field
 import fitz  # PyMuPDF
-from google import genai
 
 from ..config import get_settings
 
 settings = get_settings()
 
-# Configure Gemini client
-client = genai.Client(api_key=settings.gemini_api_key)
+# Lazy initialization of Gemini client
+_genai_client = None
+
+def get_genai_client():
+    """Get the Gemini client, initializing lazily if needed."""
+    global _genai_client
+    if _genai_client is None:
+        try:
+            from google import genai
+            if settings.gemini_api_key:
+                _genai_client = genai.Client(api_key=settings.gemini_api_key)
+            else:
+                print("WARNING: GEMINI_API_KEY not set - resume parsing disabled")
+                return None
+        except ImportError:
+            print("WARNING: google-genai package not installed - resume parsing disabled")
+            return None
+        except Exception as e:
+            print(f"WARNING: Failed to initialize Gemini client: {e}")
+            return None
+    return _genai_client
 
 
 # ============================================================================
@@ -1440,6 +1458,11 @@ async def parse_resume_with_gemini(pdf_bytes: bytes) -> ParsedResume:
         raise ValueError("Could not extract any pages from PDF")
     
     # Prepare content parts for Gemini
+    client = get_genai_client()
+    if not client:
+        raise ValueError("Gemini API not configured. Please set GEMINI_API_KEY.")
+    
+    from google import genai
     contents = [RESUME_PARSER_PROMPT]
     
     for img_bytes in images:
