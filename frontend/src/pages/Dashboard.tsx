@@ -85,18 +85,26 @@ export default function Dashboard({ user }: DashboardProps) {
                         />
                     </div>
                     <div className="user-info">
-                        <h2 className="user-name">{user?.name || 'Vinayak Ji Shukla'}</h2>
-                        <p className="user-email">{user?.email || 'vinayak.shukla2021@vitstudent.ac.in'}</p>
+                        <h2 className="user-name">{user?.name || 'User'}</h2>
+                        <p className="user-email">{user?.email}</p>
 
                         <div className="user-tags">
-                            <span className="info-tag">🎓 {user?.degree || 'B.Tech'} - {user?.branch || 'CSE'}</span>
-                            <span className="info-tag">📍 {user?.college || 'VIT Vellore'}</span>
-                            <span className="info-tag">🆔 {user?.registration_number || '21BCE7920'}</span>
+                            {(user?.degree || user?.branch) && (
+                                <span className="info-tag">🎓 {[user?.degree, user?.branch].filter(Boolean).join(' - ')}</span>
+                            )}
+                            {user?.college && (
+                                <span className="info-tag">📍 {user.college}</span>
+                            )}
+                            {user?.registration_number && (
+                                <span className="info-tag">🆔 {user.registration_number}</span>
+                            )}
                         </div>
                     </div>
-                    <div className="user-batch-badge">
-                        <span>Batch {user?.batch || '2025'}</span>
-                    </div>
+                    {user?.batch && (
+                        <div className="user-batch-badge">
+                            <span>Batch {user.batch}</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
