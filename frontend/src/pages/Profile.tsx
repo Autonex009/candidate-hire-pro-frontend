@@ -73,10 +73,9 @@ const parseBulletPoints = (text: string | null): string[] => {
     return bullets;
 };
 
-// Generate modern avatar URL with gradient
+// Generate modern avatar URL (Unified with Dashboard)
 const getAvatarUrl = (name: string | undefined) => {
-    // Using DiceBear for modern avatars
-    return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || 'User')}&backgroundColor=667eea,764ba2&backgroundType=gradientLinear&fontWeight=600&fontSize=40`;
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&size=140&background=1E3A8A&color=fff`;
 };
 
 const tabs = [

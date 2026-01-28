@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { jobsApi } from '../services/api';
 import type { Job, JobStats } from '../types';
 import './Jobs.css';
 
-type TabType = 'my' | 'all';
+
 
 export default function Jobs() {
-    const [activeTab, setActiveTab] = useState<TabType>('my');
+    const navigate = useNavigate();
+    // const [activeTab, setActiveTab] = useState<TabType>('all'); // Removed unused
     const [jobs, setJobs] = useState<Job[]>([]);
     const [stats, setStats] = useState<JobStats | null>(null);
     const [loading, setLoading] = useState(true);
@@ -14,12 +16,14 @@ export default function Jobs() {
     useEffect(() => {
         loadJobs();
         loadStats();
-    }, [activeTab]);
+    }, []);
 
     const loadJobs = async () => {
         setLoading(true);
         try {
-            const data = activeTab === 'my' ? await jobsApi.getMy() : await jobsApi.getAll();
+            // Always fetch 'all' if we removed the tabs, or keep logic if we might re-add.
+            // Since we removed tabs in UI, force 'all' via the state init.
+            const data = await jobsApi.getAll();
             setJobs(data);
         } catch (error) {
             console.error('Failed to load jobs:', error);
@@ -37,6 +41,30 @@ export default function Jobs() {
         }
     };
 
+    const handleApply = async (jobId: number) => {
+        try {
+            await jobsApi.apply(jobId);
+            // Refresh jobs to update status
+            await loadJobs();
+            await loadStats();
+        } catch (error) {
+            console.error('Failed to apply:', error);
+            alert('Failed to apply to job. Please try again.');
+        }
+    };
+
+    const handleStartAssessment = async (jobId: number) => {
+        try {
+            const result = await jobsApi.startAssessment(jobId);
+            if (result && result.test_id) {
+                navigate(`/test/${result.test_id}`);
+            }
+        } catch (error) {
+            console.error('Failed to start assessment:', error);
+            alert('Failed to start assessment. Please ensure you have applied first.');
+        }
+    };
+
     const getOfferTypeClass = (type: string) => {
         switch (type) {
             case 'dream_core': return 'dream-core';
@@ -47,91 +75,102 @@ export default function Jobs() {
 
     const formatOfferType = (type: string) => {
         switch (type) {
-            case 'dream_core': return 'Dream core offer';
-            case 'super_dream': return 'Super Dream offer';
-            default: return 'Regular offer';
+            case 'dream_core': return 'Dream Core';
+            case 'super_dream': return 'Super Dream';
+            default: return 'Regular';
         }
     };
 
     return (
-        <div className="jobs-page">
-            <h1 className="jobs-title">My Jobs</h1>
-
-            <div className="jobs-tabs">
-                <button
-                    className={`jobs-tab ${activeTab === 'my' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('my')}
-                >
-                    My Jobs
-                </button>
-                <button
-                    className={`jobs-tab ${activeTab === 'all' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('all')}
-                >
-                    All Jobs
-                </button>
+        <div className="jobs-page fade-in">
+            <div className="jobs-header-section">
+                <div>
+                    <h1 className="jobs-title">Explore Opportunities</h1>
+                    <p className="jobs-subtitle">Find your dream role</p>
+                </div>
             </div>
 
-            <div className="jobs-content">
-                <div className="jobs-list">
-                    <div className="jobs-controls">
-                        <select className="jobs-sort">
-                            <option>Sort By</option>
-                            <option>Recent</option>
-                            <option>CTC: High to Low</option>
-                            <option>CTC: Low to High</option>
-                        </select>
-                        <button className="btn">Filters</button>
+            <div className="jobs-layout">
+                {/* Main List */}
+                <div className="jobs-main">
+                    <div className="jobs-toolbar glass-panel">
+                        <div className="search-wrapper">
+                            <span className="search-icon">🔍</span>
+                            <input type="text" placeholder="Search opportunities..." className="job-search-input" />
+                        </div>
+                        <div className="filter-actions">
+                            <select className="jobs-sort">
+                                <option>Latest First</option>
+                                <option>Highest CTC</option>
+                            </select>
+                            <button className="btn-filter">Filters</button>
+                        </div>
                     </div>
 
                     {loading ? (
-                        <p>Loading jobs...</p>
+                        <div className="loading-state">Loading opportunities...</div>
                     ) : jobs.length === 0 ? (
-                        <div className="card" style={{ textAlign: 'center', padding: '48px' }}>
-                            <p className="text-muted">No jobs found</p>
+                        <div className="empty-state glass-panel">
+                            <div className="empty-icon">📂</div>
+                            <h3>No opportunities found</h3>
+                            <p>Try adjusting your search filters</p>
                         </div>
                     ) : (
                         <div className="jobs-grid">
                             {jobs.map(job => (
-                                <div key={job.id} className="job-card">
-                                    <div className="job-card-header">
-                                        <div>
-                                            <div className="job-company">{job.role}</div>
-                                            <div className="job-role">{job.company_name}</div>
+                                <div key={job.id} className="job-card glass-panel">
+                                    <div className="job-card-top">
+                                        <div className="company-logo-box">
+                                            {job.company_name.charAt(0)}
                                         </div>
-                                        <span className={`job-status-badge ${job.application_status === 'applied' ? 'applied' : 'not-applied'}`}>
-                                            {job.application_status === 'applied' ? 'Applied' : 'Not Applied'}
+                                        <div className="job-header-info">
+                                            <h3 className="job-role">{job.role}</h3>
+                                            <p className="job-company">{job.company_name}</p>
+                                        </div>
+                                        <span className={`status-badge ${job.application_status === 'applied' ? 'applied' : 'new'}`}>
+                                            {job.application_status === 'applied' ? 'Applied' : 'New'}
                                         </span>
                                     </div>
 
-                                    <div className="job-details">
-                                        {job.location && (
-                                            <div className="job-detail">
-                                                <svg viewBox="0 0 24 24" fill="currentColor">
-                                                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                                                </svg>
-                                                {job.location}
-                                            </div>
-                                        )}
-                                        <div className="job-detail">
-                                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-                                            </svg>
-                                            {job.job_type}
-                                        </div>
+                                    <div className="job-tags-row">
+                                        <span className="j-tag location">
+                                            📍 {job.location || 'Bangalore'}
+                                        </span>
+                                        <span className="j-tag type">
+                                            💼 {job.job_type}
+                                        </span>
                                     </div>
 
-                                    <div className="job-footer">
-                                        <div className="job-ctc">
-                                            {job.ctc ? (
-                                                <>₹ <strong>{job.ctc}</strong> LPA</>
-                                            ) : (
-                                                <span className="text-muted">CTC Not Provided</span>
-                                            )}
+                                    <div className="job-card-footer">
+                                        <div className="ctc-info">
+                                            <span className="label">Package</span>
+                                            <span className="value">₹{job.ctc} LPA</span>
                                         </div>
-                                        <span className={`job-offer-type ${getOfferTypeClass(job.offer_type)}`}>
+                                        <span className={`offer-badge ${getOfferTypeClass(job.offer_type)}`}>
                                             {formatOfferType(job.offer_type)}
                                         </span>
+                                    </div>
+
+                                    <div className="job-actions">
+                                        {job.application_status === 'applied' || job.application_status === 'shortlisted' ? (
+                                            job.test_id ? (
+                                                <button
+                                                    className="btn-start-test"
+                                                    onClick={() => handleStartAssessment(job.id)}
+                                                >
+                                                    Start Assessment
+                                                </button>
+                                            ) : (
+                                                <button className="btn-view-job" disabled>Applied</button>
+                                            )
+                                        ) : (
+                                            <button
+                                                className="btn-apply-job"
+                                                onClick={() => handleApply(job.id)}
+                                            >
+                                                Apply Now
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -139,50 +178,51 @@ export default function Jobs() {
                     )}
                 </div>
 
+                {/* Sidebar (Summary) */}
                 <div className="jobs-sidebar">
-                    <div className="sidebar-card">
-                        <h3 className="sidebar-title">Summary</h3>
-                        <div className="summary-item">
-                            <div className="summary-icon" style={{ background: 'rgba(52, 86, 255, 0.1)' }}>
-                                <svg viewBox="0 0 24 24" fill="#3456FF">
-                                    <path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-2 .89-2 2v11c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z" />
-                                </svg>
-                            </div>
-                            <span className="summary-label">No. of Jobs</span>
-                            <span className="summary-value">{stats?.total_jobs || 0}</span>
-                        </div>
-                        <div className="summary-item">
-                            <div className="summary-icon" style={{ background: 'rgba(34, 197, 94, 0.1)' }}>
-                                <svg viewBox="0 0 24 24" fill="#22C55E">
-                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                                </svg>
-                            </div>
-                            <span className="summary-label">Placed</span>
-                            <span className="summary-value">{stats?.placed || 0}</span>
-                        </div>
-                        <div className="summary-item">
-                            <div className="summary-icon" style={{ background: 'rgba(255, 173, 58, 0.1)' }}>
-                                <svg viewBox="0 0 24 24" fill="#FFAD3A">
-                                    <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" />
-                                </svg>
-                            </div>
-                            <span className="summary-label">Waiting</span>
-                            <span className="summary-value">{stats?.waiting || 0}</span>
-                        </div>
-                        <div className="summary-item">
-                            <div className="summary-icon" style={{ background: 'rgba(239, 68, 68, 0.1)' }}>
-                                <svg viewBox="0 0 24 24" fill="#EF4444">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
-                            </div>
-                            <span className="summary-label">Rejected</span>
-                            <span className="summary-value">{stats?.rejected || 0}</span>
-                        </div>
-                    </div>
+                    <div className="sidebar-widget glass-panel">
+                        <h3 className="widget-title">Summary</h3>
 
-                    <div className="sidebar-card">
-                        <h3 className="sidebar-title">Recently Consumed</h3>
-                        <p className="text-sm text-muted">No recent activity</p>
+                        <div className="tracker-item">
+                            <div className="tracker-icon total">📊</div>
+                            <div className="tracker-info">
+                                <span className="t-label">No. of Opportunities</span>
+                                <span className="t-value">{stats?.total_jobs || jobs.length || 0}</span>
+                            </div>
+                        </div>
+
+                        <div className="tracker-item">
+                            <div className="tracker-icon applied">✅</div>
+                            <div className="tracker-info">
+                                <span className="t-label">Applied</span>
+                                <span className="t-value">{stats?.applied || 0}</span>
+                            </div>
+                        </div>
+
+                        <div className="tracker-item">
+                            <div className="tracker-icon waiting">⏳</div>
+                            <div className="tracker-info">
+                                <span className="t-label">In progress</span>
+                                <span className="t-value">{stats?.waiting || 0}</span>
+                            </div>
+                        </div>
+
+                        <div className="tracker-item">
+                            <div className="tracker-icon rejected">❌</div>
+                            <div className="tracker-info">
+                                <span className="t-label">Rejected</span>
+                                <span className="t-value error">{stats?.rejected || 0}</span>
+                            </div>
+                        </div>
+
+                        <div className="tracker-item" style={{ marginTop: '20px', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '20px' }}>
+                            <div className="tracker-info" style={{ width: '100%' }}>
+                                <span className="t-label" style={{ marginBottom: '8px', display: 'block' }}>Recently Consumed</span>
+                                <span className="t-value" style={{ fontSize: '0.9rem', color: '#94A3B8', fontWeight: 500 }}>
+                                    No recent activity
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

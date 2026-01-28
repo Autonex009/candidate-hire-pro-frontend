@@ -3,7 +3,7 @@ import { adminApiService, API_HOST } from '../../services/api';
 import {
     Video, Image, CheckSquare, Shuffle, BookOpen, Plus, Upload, FileSpreadsheet,
     Trash2, ChevronDown, ChevronRight, X, Eye, Wand2, ClipboardList, Library,
-    ToggleLeft, ToggleRight, FileText
+    ToggleLeft, ToggleRight, FileText, Clock, Award, ChevronLeft, Globe
 } from 'lucide-react';
 import './TestManagement.css';
 
@@ -29,8 +29,21 @@ interface Question {
     media_url?: string;
     passage?: string;
     sentences?: string[];
+    html_content?: string;
+    documents?: Array<{ id: string; title: string; content: string }>;
     marks: number;
     difficulty: string;
+}
+
+interface TestPreview {
+    id: number;
+    title: string;
+    description: string | null;
+    duration_minutes: number;
+    total_questions: number;
+    total_marks: number;
+    is_published: boolean;
+    questions: Question[];
 }
 
 // Question Types Configuration
@@ -40,6 +53,7 @@ const QUESTION_TYPES = [
     { id: 'reading', name: 'Reading Summary', icon: BookOpen, color: '#ec4899', bg: '#fce7f3' },
     { id: 'jumble', name: 'Jumble Sentences', icon: Shuffle, color: '#3b82f6', bg: '#dbeafe' },
     { id: 'mcq', name: 'MCQ', icon: CheckSquare, color: '#10b981', bg: '#d1fae5' },
+    { id: 'agent_analysis', name: 'Agent Analysis', icon: Globe, color: '#0ea5e9', bg: '#e0f2fe' },
 ];
 
 const DIFFICULTY_COLORS: Record<string, { bg: string; text: string }> = {
@@ -227,15 +241,21 @@ export default function TestManagement() {
     const [uploadedFileUrl, setUploadedFileUrl] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const excelInputRef = useRef<HTMLInputElement>(null);
+    const htmlFileInputRef = useRef<HTMLInputElement>(null);
+
     const [questionForm, setQuestionForm] = useState({
         question_text: '', media_url: '', options: ['', '', '', ''],
         correct_answer: '', passage: '', sentences: ['', '', '', '', ''],
-        difficulty: 'medium'
+        difficulty: 'medium',
+        html_content: '', // Stores uploaded HTML file URL
+        documents: [{ id: 'doc-1', title: '', content: '' }] as Array<{ id: string; title: string; content: string }>  // content stores file URL
     });
 
     // Test Generator State
     const [generatorTitle, setGeneratorTitle] = useState('');
     const [generatorDuration, setGeneratorDuration] = useState(60);
+    const [enableAntiCheat, setEnableAntiCheat] = useState(true);
+    const [maxTabSwitches, setMaxTabSwitches] = useState(3);
     const [sections, setSections] = useState<SectionsState>(() => {
         const initial: SectionsState = {};
         QUESTION_TYPES.forEach(t => {
@@ -246,6 +266,16 @@ export default function TestManagement() {
 
     // Question counts per type and difficulty
     const [questionCounts, setQuestionCounts] = useState<Record<string, { hard: number; medium: number; easy: number }>>({});
+
+    // Test Preview State
+    const [previewTest, setPreviewTest] = useState<TestPreview | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [currentPreviewQuestion, setCurrentPreviewQuestion] = useState(0);
+
+    // Delete Modal State
+    const [deleteModal, setDeleteModal] = useState<{ open: boolean; type: 'test' | 'question'; id: number | null; name: string }>(
+        { open: false, type: 'test', id: null, name: '' }
+    );
 
     // Load divisions
     useEffect(() => {
@@ -317,6 +347,42 @@ export default function TestManagement() {
         } catch (error) { console.error('Failed to publish:', error); }
     }, []);
 
+    const handleDeleteTest = useCallback((testId: number, title: string = 'this test') => {
+        setDeleteModal({ open: true, type: 'test', id: testId, name: title });
+    }, []);
+
+    const confirmDeleteTest = useCallback(async () => {
+        if (!deleteModal.id) return;
+        try {
+            await adminApiService.deleteTest(deleteModal.id);
+            setTests(prev => prev.filter(t => t.id !== deleteModal.id));
+        } catch (error) {
+            console.error('Failed to delete test:', error);
+            alert('Failed to delete test');
+        } finally {
+            setDeleteModal({ open: false, type: 'test', id: null, name: '' });
+        }
+    }, [deleteModal.id]);
+
+    const handleViewTest = useCallback(async (testId: number) => {
+        setPreviewLoading(true);
+        setCurrentPreviewQuestion(0);
+        try {
+            const data = await adminApiService.getTestPreview(testId);
+            setPreviewTest(data);
+        } catch (error) {
+            console.error('Failed to load test preview:', error);
+            alert('Failed to load test preview');
+        } finally {
+            setPreviewLoading(false);
+        }
+    }, []);
+
+    const closePreview = useCallback(() => {
+        setPreviewTest(null);
+        setCurrentPreviewQuestion(0);
+    }, []);
+
     const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -324,8 +390,8 @@ export default function TestManagement() {
         try {
             const fileType = selectedType as 'video' | 'image';
             const result = await adminApiService.uploadFile(file, fileType);
-            setUploadedFileUrl(result.file_url);
-            setQuestionForm(p => ({ ...p, media_url: result.file_url }));
+            setUploadedFileUrl(result.url);
+            setQuestionForm(p => ({ ...p, media_url: result.url }));
         } catch (error) {
             alert('Upload failed');
         } finally {
@@ -369,6 +435,10 @@ export default function TestManagement() {
             }
             if (selectedType === 'reading') data.passage = questionForm.passage;
             if (selectedType === 'jumble') data.sentences = questionForm.sentences.filter(s => s.trim());
+            if (selectedType === 'agent_analysis') {
+                data.html_content = questionForm.html_content;
+                data.documents = questionForm.documents.filter(d => d.title.trim() && d.content.trim());
+            }
 
             await adminApiService.createQuestion(data);
             const newQuestions = await adminApiService.getQuestions({ division_id: selectedDivision });
@@ -386,17 +456,27 @@ export default function TestManagement() {
         setQuestionForm({
             question_text: '', media_url: '', options: ['', '', '', ''],
             correct_answer: '', passage: '', sentences: ['', '', '', '', ''],
-            difficulty: 'medium'
+            difficulty: 'medium',
+            html_content: '',
+            documents: [{ id: 'doc-1', title: '', content: '' }]
         });
     }, []);
 
-    const handleDeleteQuestion = useCallback(async (id: number) => {
-        if (!confirm('Delete this question?')) return;
-        try {
-            await adminApiService.deleteQuestion(id);
-            setQuestions(prev => prev.filter(q => q.id !== id));
-        } catch (error) { console.error('Failed to delete:', error); }
+    const handleDeleteQuestion = useCallback((id: number) => {
+        setDeleteModal({ open: true, type: 'question', id: id, name: 'this question' });
     }, []);
+
+    const confirmDeleteQuestion = useCallback(async () => {
+        if (!deleteModal.id) return;
+        try {
+            await adminApiService.deleteQuestion(deleteModal.id);
+            setQuestions(prev => prev.filter(q => q.id !== deleteModal.id));
+        } catch (error) {
+            console.error('Failed to delete:', error);
+        } finally {
+            setDeleteModal({ open: false, type: 'question', id: null, name: '' });
+        }
+    }, [deleteModal.id]);
 
     const handleSectionChange = useCallback((typeId: string, updates: Partial<SectionConfig>) => {
         setSections(prev => ({
@@ -435,7 +515,9 @@ export default function TestManagement() {
                 description: '',
                 division_id: selectedDivision,
                 duration_minutes: generatorDuration,
-                sections: sectionData
+                sections: sectionData,
+                enable_tab_switch_detection: enableAntiCheat,
+                max_tab_switches_allowed: maxTabSwitches
             });
 
             alert('Test generated successfully!');
@@ -505,8 +587,9 @@ export default function TestManagement() {
                                         <td><span className={`status-badge ${test.is_published ? 'published' : 'draft'}`}>{test.is_published ? 'Published' : 'Draft'}</span></td>
                                         <td>{formatDate(test.created_at)}</td>
                                         <td>
-                                            <button className="action-icon"><Eye size={18} /></button>
+                                            <button className="action-icon" onClick={() => handleViewTest(test.id)} title="View Test"><Eye size={18} /></button>
                                             {!test.is_published && <button className="publish-btn" onClick={() => handlePublishTest(test.id)}>Publish</button>}
+                                            <button className="action-icon delete" onClick={(e) => { e.stopPropagation(); handleDeleteTest(test.id, test.title); }} title="Delete Test"><Trash2 size={18} /></button>
                                         </td>
                                     </tr>
                                 ))}
@@ -538,6 +621,32 @@ export default function TestManagement() {
                                     <label>Duration (mins)</label>
                                     <input type="number" value={generatorDuration} onChange={e => setGeneratorDuration(Number(e.target.value))} />
                                 </div>
+                            </div>
+
+                            <h3 style={{ marginTop: '20px' }}>Anti-Cheat Settings</h3>
+                            <div className="basic-details-grid">
+                                <div className="form-group checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', gridColumn: 'span 2' }}>
+                                    <input
+                                        type="checkbox"
+                                        id="enableAntiCheat"
+                                        checked={enableAntiCheat}
+                                        onChange={e => setEnableAntiCheat(e.target.checked)}
+                                        style={{ width: 'auto', margin: 0 }}
+                                    />
+                                    <label htmlFor="enableAntiCheat" style={{ margin: 0, cursor: 'pointer' }}>Enable Tab Switch Detection</label>
+                                </div>
+                                {enableAntiCheat && (
+                                    <div className="form-group">
+                                        <label>Max Allowed Switches</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="10"
+                                            value={maxTabSwitches}
+                                            onChange={e => setMaxTabSwitches(Number(e.target.value))}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -662,6 +771,59 @@ export default function TestManagement() {
                                                 ))}
                                             </div>
                                         )}
+                                        {selectedType === 'agent_analysis' && (
+                                            <div className="form-section agent-analysis-form">
+                                                <label>HTML File (for In-Page Browser)</label>
+                                                <div className="file-upload-zone">
+                                                    <input
+                                                        type="file"
+                                                        accept=".html,.htm"
+                                                        ref={htmlFileInputRef}
+                                                        style={{ display: 'none' }}
+                                                        onChange={async (e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                try {
+                                                                    setUploading(true);
+                                                                    const result = await adminApiService.uploadFile(file, 'html');
+                                                                    setQuestionForm(p => ({ ...p, html_content: result.url }));
+                                                                } catch (err) {
+                                                                    console.error('Failed to upload HTML file:', err);
+                                                                    alert('Failed to upload HTML file');
+                                                                } finally {
+                                                                    setUploading(false);
+                                                                }
+                                                            }
+                                                        }}
+                                                    />
+                                                    {questionForm.html_content ? (
+                                                        <div className="file-uploaded">
+                                                            <span className="file-name">✓ HTML File Uploaded</span>
+                                                            <button
+                                                                type="button"
+                                                                className="remove-file-btn"
+                                                                onClick={() => setQuestionForm(p => ({ ...p, html_content: '' }))}
+                                                            >
+                                                                <Trash2 size={14} /> Remove
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            className="upload-btn"
+                                                            onClick={() => htmlFileInputRef.current?.click()}
+                                                            disabled={uploading}
+                                                        >
+                                                            <Upload size={18} />
+                                                            {uploading ? 'Uploading...' : 'Upload HTML File (.html, .htm)'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="docs-info" style={{ marginTop: '16px', padding: '12px', background: '#e0f2fe', borderRadius: '8px', color: '#0369a1', fontSize: '14px' }}>
+                                                    📄 Reference documents are managed at the Division level. Go to Divisions → Manage Docs.
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="form-section">
                                             <label>Question *</label>
                                             <textarea rows={2} placeholder="Enter question..." value={questionForm.question_text} onChange={e => setQuestionForm(p => ({ ...p, question_text: e.target.value }))} />
@@ -731,6 +893,175 @@ export default function TestManagement() {
                         ) : (
                             filteredQuestions.map(q => <QuestionCard key={q.id} question={q} onDelete={handleDeleteQuestion} />)
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ===== TEST PREVIEW MODAL ===== */}
+            {(previewTest || previewLoading) && (
+                <div className="modal-overlay" onClick={closePreview}>
+                    <div className="modal preview-modal" onClick={e => e.stopPropagation()}>
+                        {previewLoading ? (
+                            <div className="loading-state">Loading test preview...</div>
+                        ) : previewTest && (
+                            <>
+                                <div className="modal-header">
+                                    <div>
+                                        <h2>{previewTest.title}</h2>
+                                        <p className="preview-meta">
+                                            <Clock size={14} /> {previewTest.duration_minutes} min
+                                            <span style={{ margin: '0 8px' }}>•</span>
+                                            <Award size={14} /> {previewTest.total_marks} marks
+                                            <span style={{ margin: '0 8px' }}>•</span>
+                                            {previewTest.questions.length} questions
+                                        </p>
+                                    </div>
+                                    <button className="close-btn" onClick={closePreview}><X size={20} /></button>
+                                </div>
+                                <div className="preview-content">
+                                    {/* Question Navigation */}
+                                    <div className="preview-nav">
+                                        {previewTest.questions.map((_, idx) => (
+                                            <button
+                                                key={idx}
+                                                className={`nav-btn ${currentPreviewQuestion === idx ? 'active' : ''}`}
+                                                onClick={() => setCurrentPreviewQuestion(idx)}
+                                            >
+                                                {idx + 1}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Question Display */}
+                                    {previewTest.questions.length > 0 ? (
+                                        <div className="preview-question">
+                                            {(() => {
+                                                const q = previewTest.questions[currentPreviewQuestion];
+                                                const typeConfig = QUESTION_TYPES.find(t => t.id === q.question_type) || QUESTION_TYPES[4];
+                                                const IconComponent = typeConfig.icon;
+                                                const diffStyle = DIFFICULTY_COLORS[q.difficulty] || DIFFICULTY_COLORS.medium;
+
+                                                return (
+                                                    <>
+                                                        <div className="question-header">
+                                                            <div className="question-type-badge" style={{ background: typeConfig.bg }}>
+                                                                <IconComponent size={16} color={typeConfig.color} />
+                                                                <span style={{ color: typeConfig.color }}>{typeConfig.name}</span>
+                                                            </div>
+                                                            <span className="difficulty-pill" style={{ background: diffStyle.bg, color: diffStyle.text }}>
+                                                                {q.difficulty}
+                                                            </span>
+                                                            <span className="marks-badge">{q.marks} marks</span>
+                                                        </div>
+
+                                                        {/* Media */}
+                                                        {q.media_url && (
+                                                            <div className="preview-media">
+                                                                {q.question_type === 'video' ? (
+                                                                    <video
+                                                                        src={q.media_url.startsWith('/') ? `${API_HOST}${q.media_url}` : q.media_url}
+                                                                        controls
+                                                                        className="preview-video"
+                                                                    />
+                                                                ) : (
+                                                                    <img
+                                                                        src={q.media_url.startsWith('/') ? `${API_HOST}${q.media_url}` : q.media_url}
+                                                                        alt="Question media"
+                                                                        className="preview-image"
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Passage */}
+                                                        {q.passage && (
+                                                            <div className="preview-passage">
+                                                                <label>Passage</label>
+                                                                <p>{q.passage}</p>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Question Text */}
+                                                        <p className="question-text-preview">{q.question_text}</p>
+
+                                                        {/* MCQ Options */}
+                                                        {q.options && q.options.length > 0 && (
+                                                            <div className="preview-options">
+                                                                {q.options.map((opt, i) => (
+                                                                    <div key={i} className={`option-item ${opt === q.correct_answer ? 'correct' : ''}`}>
+                                                                        <span className="option-letter">{String.fromCharCode(65 + i)}</span>
+                                                                        <span>{opt}</span>
+                                                                        {opt === q.correct_answer && <CheckSquare size={16} className="check-icon" />}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Jumble Sentences */}
+                                                        {q.sentences && q.sentences.length > 0 && (
+                                                            <div className="preview-sentences">
+                                                                <label>Correct Order (hidden from candidates):</label>
+                                                                {q.sentences.map((s, i) => (
+                                                                    <div key={i} className="sentence-item">
+                                                                        <span className="sentence-num">{i + 1}</span>
+                                                                        <span>{s}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                    ) : (
+                                        <div className="empty-state">
+                                            <p>No questions in this test yet</p>
+                                        </div>
+                                    )}
+
+                                    {/* Navigation Arrows */}
+                                    {previewTest.questions.length > 1 && (
+                                        <div className="preview-arrows">
+                                            <button
+                                                disabled={currentPreviewQuestion === 0}
+                                                onClick={() => setCurrentPreviewQuestion(prev => prev - 1)}
+                                            >
+                                                <ChevronLeft size={20} /> Previous
+                                            </button>
+                                            <button
+                                                disabled={currentPreviewQuestion === previewTest.questions.length - 1}
+                                                onClick={() => setCurrentPreviewQuestion(prev => prev + 1)}
+                                            >
+                                                Next <ChevronRight size={20} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+            {/* Delete Confirmation Modal */}
+            {deleteModal.open && (
+                <div className="modal-overlay" onClick={() => setDeleteModal({ open: false, type: 'test', id: null, name: '' })}>
+                    <div className="modal delete-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>Delete {deleteModal.type === 'test' ? 'Test' : 'Question'}</h2>
+                            <button className="close-btn" onClick={() => setDeleteModal({ open: false, type: 'test', id: null, name: '' })}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p>Are you sure you want to delete <strong>{deleteModal.name}</strong>?</p>
+                            <p className="warning-text">This action cannot be undone.</p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn-secondary" onClick={() => setDeleteModal({ open: false, type: 'test', id: null, name: '' })}>Cancel</button>
+                            <button className="btn-danger" onClick={() => deleteModal.type === 'test' ? confirmDeleteTest() : confirmDeleteQuestion()}>
+                                Delete {deleteModal.type === 'test' ? 'Test' : 'Question'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

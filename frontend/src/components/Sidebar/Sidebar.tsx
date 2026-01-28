@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import smallLogo from '../../assets/small-logo.jpeg';
 import './Sidebar.css';
@@ -28,32 +29,71 @@ const AssessmentsIcon = () => (
     </svg>
 );
 
-export default function Sidebar() {
+interface SidebarProps {
+    mobileOpen?: boolean;
+    onMobileClose?: () => void;
+}
+
+export default function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
+    const [isCollapsed, setIsCollapsed] = useState(true);
+
+    const handleNavClick = () => {
+        if (window.innerWidth < 768 && onMobileClose) {
+            onMobileClose();
+        }
+    };
+
     return (
-        <nav className="sidebar">
-            <div className="sidebar-logo">
-                <img src={smallLogo} alt="Logo" />
+        <nav
+            className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}
+            onMouseEnter={() => setIsCollapsed(false)}
+            onMouseLeave={() => setIsCollapsed(true)}
+        >
+            <div className="sidebar-header">
+                <div className="sidebar-logo">
+                    <img
+                        src={smallLogo}
+                        alt="Logo"
+                        style={{ opacity: isCollapsed ? 0.8 : 1 }}
+                    />
+                </div>
             </div>
 
             <div className="sidebar-nav">
-                <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <NavLink
+                    to="/dashboard"
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    onClick={handleNavClick}
+                >
                     <DashboardIcon />
-                    <span>Dashboard</span>
+                    <span className="nav-text">Dashboard</span>
                 </NavLink>
 
-                <NavLink to="/courses" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                    <CoursesIcon />
-                    <span>Courses</span>
-                </NavLink>
-
-                <NavLink to="/jobs" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <NavLink
+                    to="/opportunities"
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    onClick={handleNavClick}
+                >
                     <JobsIcon />
-                    <span>Jobs</span>
+                    <span className="nav-text">Opportunities</span>
                 </NavLink>
 
-                <NavLink to="/assessments" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <NavLink
+                    to="/courses"
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    onClick={handleNavClick}
+                >
+                    <CoursesIcon />
+                    <span className="nav-text">Courses</span>
+                </NavLink>
+
+                <NavLink
+                    to="/assessments"
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    onClick={handleNavClick}
+                >
                     <AssessmentsIcon />
-                    <span>Assessments</span>
+                    <span className="nav-text">Assessments</span>
                 </NavLink>
             </div>
         </nav>

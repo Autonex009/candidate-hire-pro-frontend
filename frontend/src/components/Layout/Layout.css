@@ -1,27 +1,78 @@
+/* Layout.css */
 .layout {
-    display: flex;
     min-height: 100vh;
-    background-color: var(--color-bg-primary);
+    background: var(--color-bg-app);
+    position: relative;
+    overflow-x: hidden;
 }
 
 .layout-body {
     display: flex;
     flex-direction: column;
-    flex: 1;
-    margin-left: var(--sidebar-width);
     min-height: 100vh;
-    transition: margin-left 0.3s ease;
+    /* Sidebar Offset Logic */
+    margin-left: var(--layout-offset-collapsed);
+    width: auto;
+    max-width: calc(100% - var(--layout-offset-collapsed));
+    transition: margin-left 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), max-width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    padding: 0;
 }
 
+/* Constrain main content */
 .main-content {
-    flex: 1;
-    padding: var(--spacing-xl) var(--spacing-2xl);
-    margin-top: 70px;
-    overflow-y: auto;
-    background-color: var(--color-bg-primary);
+    width: 100%;
+    max-width: 100%;
+    padding: 100px 32px 40px 32px;
+    /* Top padding for fixed Header */
+    box-sizing: border-box;
+    overflow-x: visible;
 }
 
-/* When sidebar expands, content shifts */
+/* Active Push */
 .layout:has(.sidebar:hover) .layout-body {
-    margin-left: var(--sidebar-expanded-width);
+    margin-left: var(--layout-offset-expanded);
+    max-width: calc(100% - var(--layout-offset-expanded));
+}
+
+/* Mobile Overlay */
+.mobile-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 1900;
+    opacity: 0;
+    animation: fadeInOverlay 0.3s forwards;
+}
+
+@keyframes fadeInOverlay {
+    to {
+        opacity: 1;
+    }
+}
+
+@media (max-width: 768px) {
+    .mobile-overlay {
+        display: block;
+    }
+
+    .layout-body {
+        margin-left: 0;
+        width: 100%;
+        max-width: 100%;
+        padding-bottom: 80px;
+    }
+
+    .main-content {
+        padding: 80px 16px 80px 16px;
+    }
+
+    .layout:has(.sidebar:hover) .layout-body {
+        margin-left: 0;
+        max-width: 100%;
+    }
 }

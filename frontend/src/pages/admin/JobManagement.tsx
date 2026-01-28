@@ -33,6 +33,7 @@ export default function JobManagement() {
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [tests, setTests] = useState<Assessment[]>([]);
     const [loading, setLoading] = useState(true);
+    const [deleteModal, setDeleteModal] = useState<{ open: boolean; job: Job | null }>({ open: false, job: null });
 
     // Form state
     const [formData, setFormData] = useState({
@@ -41,10 +42,11 @@ export default function JobManagement() {
         location: '',
         type: 'Full Time',
         ctc: '',
-        description: ''
+        description: '',
+        payPerApprox: ''
     });
     const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
-    const [selectedAssessments, setSelectedAssessments] = useState<number[]>([]);
+    const [selectedTestId, setSelectedTestId] = useState<number | null>(null);
 
     // Fetch data on mount
     useEffect(() => {
@@ -87,15 +89,7 @@ export default function JobManagement() {
 
     const handleDivisionChange = (divisionId: number | null) => {
         setSelectedDivision(divisionId);
-        setSelectedAssessments([]); // Reset assessments when division changes
-    };
-
-    const toggleAssessment = (assessmentId: number) => {
-        setSelectedAssessments(prev =>
-            prev.includes(assessmentId)
-                ? prev.filter(id => id !== assessmentId)
-                : [...prev, assessmentId]
-        );
+        setSelectedTestId(null); // Reset assessments when division changes
     };
 
     const handleCreateJob = async () => {
@@ -107,10 +101,12 @@ export default function JobManagement() {
             alert('Please select a division');
             return;
         }
-        if (selectedAssessments.length === 0) {
-            alert('Please select at least one assessment');
-            return;
-        }
+        // Test selection is optional for flexibility, but recommended.
+        // If mandatory, uncomment below:
+        // if (!selectedTestId) {
+        //     alert('Please select an assessment');
+        //     return;
+        // }
 
         try {
             await adminApiService.createJob({
@@ -119,7 +115,8 @@ export default function JobManagement() {
                 location: formData.location || undefined,
                 ctc: formData.ctc ? parseFloat(formData.ctc) : undefined,
                 job_type: formData.type,
-                description: formData.description || undefined
+                description: formData.description || undefined,
+                test_id: selectedTestId || undefined
             });
 
             setShowModal(false);
@@ -131,18 +128,25 @@ export default function JobManagement() {
     };
 
     const resetForm = () => {
-        setFormData({ title: '', company: 'Autonex AI', location: '', type: 'Full Time', ctc: '', description: '' });
+        setFormData({ title: '', company: 'Autonex AI', location: '', type: 'Full Time', ctc: '', description: '', payPerApprox: '' });
         setSelectedDivision(null);
-        setSelectedAssessments([]);
+        setSelectedTestId(null);
     };
 
     const handleDeleteJob = async (job: Job) => {
-        if (!confirm(`Delete "${job.role}"?`)) return;
+        setDeleteModal({ open: true, job });
+    };
+
+    const confirmDelete = async () => {
+        const job = deleteModal.job;
+        if (!job) return;
         try {
             await adminApiService.deleteJob(job.id);
             fetchJobs();
         } catch (error) {
             alert('Failed to delete job');
+        } finally {
+            setDeleteModal({ open: false, job: null });
         }
     };
 
@@ -226,7 +230,7 @@ export default function JobManagement() {
                             )}
 
                             <div className="job-card-actions">
-                                <button className="btn-outline" onClick={() => handleDeleteJob(job)}>
+                                <button className="btn-outline" onClick={(e) => { e.stopPropagation(); handleDeleteJob(job); }}>
                                     Delete
                                 </button>
                                 <button className="btn-primary-sm">View Details</button>
@@ -299,6 +303,27 @@ export default function JobManagement() {
                                         style={{ resize: 'vertical' }}
                                     />
                                 </div>
+                                <div className="form-row" style={{ marginTop: '16px' }}>
+                                    <div className="form-group">
+                                        <label>CTC (LPA)</label>
+                                        <input
+                                            type="number"
+                                            value={formData.ctc}
+                                            onChange={e => setFormData(p => ({ ...p, ctc: e.target.value }))}
+                                            placeholder="e.g. 4.5"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Pay Per Approx (₹/task)</label>
+                                        <input
+                                            type="number"
+                                            value={formData.payPerApprox || ''}
+                                            onChange={e => setFormData(p => ({ ...p, payPerApprox: e.target.value }))}
+                                            placeholder="e.g. 50"
+                                        />
+                                        <span className="form-hint-inline" style={{ fontSize: '11px', color: '#64748b' }}>Estimated pay per task/annotation</span>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Step 2: Select Division */}
@@ -333,11 +358,12 @@ export default function JobManagement() {
                                             {filteredAssessments.map(test => (
                                                 <button
                                                     key={test.id}
-                                                    className={`assessment-card ${selectedAssessments.includes(test.id) ? 'selected' : ''}`}
-                                                    onClick={() => toggleAssessment(test.id)}
+                                                    className={`assessment-card ${selectedTestId === test.id ? 'selected' : ''}`}
+                                                    onClick={() => setSelectedTestId(test.id === selectedTestId ? null : test.id)}
+                                                    data-single-select="true"
                                                 >
                                                     <span className="assessment-title">{test.title}</span>
-                                                    {selectedAssessments.includes(test.id) && <Check size={18} className="check-icon" />}
+                                                    {selectedTestId === test.id && <Check size={18} className="check-icon" />}
                                                 </button>
                                             ))}
                                         </div>
@@ -349,6 +375,29 @@ export default function JobManagement() {
                             <button className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                             <button className="btn-primary" onClick={handleCreateJob}>
                                 Create Job
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {deleteModal.open && deleteModal.job && (
+                <div className="modal-overlay" onClick={() => setDeleteModal({ open: false, job: null })}>
+                    <div className="modal delete-modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>Confirm Delete</h2>
+                        </div>
+                        <div className="modal-body">
+                            <p>Are you sure you want to delete <strong>"{deleteModal.job.role}"</strong>?</p>
+                            <p className="warning-text">This action cannot be undone.</p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn-secondary" onClick={() => setDeleteModal({ open: false, job: null })}>
+                                Cancel
+                            </button>
+                            <button className="btn-danger" onClick={confirmDelete}>
+                                Delete Job
                             </button>
                         </div>
                     </div>

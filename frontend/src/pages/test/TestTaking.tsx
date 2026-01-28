@@ -1,8 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAntiCheat, useTestTimer } from '../../hooks/useAntiCheat';
-import { API_BASE_URL } from '../../services/api';
+import { API_BASE_URL, API_HOST } from '../../services/api';
+import InPageBrowser from '../../components/InPageBrowser';
 import './TestTaking.css';
+
+// Helper to get full media URL
+const getMediaUrl = (url?: string) => {
+    if (!url) return '';
+    // If already a full URL (http/https or Cloudinary), return as-is
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    // Otherwise prepend backend host
+    return `${API_HOST}${url}`;
+};
 
 interface Question {
     id: number;
@@ -10,6 +20,10 @@ interface Question {
     question_text: string;
     options?: string[];
     media_url?: string;
+    passage?: string;
+    sentences?: string[];
+    html_content?: string;
+    documents?: Array<{ id: string; title: string; content: string }>;
     marks: number;
 }
 
@@ -21,6 +35,8 @@ interface TestSession {
     total_questions: number;
     questions: Question[];
     started_at: string;
+    enable_tab_switch_detection: boolean;
+    max_tab_switches_allowed: number;
 }
 
 export default function TestTaking() {
@@ -30,30 +46,43 @@ export default function TestTaking() {
     const [session, setSession] = useState<TestSession | null>(null);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [answers, setAnswers] = useState<Record<number, string>>({});
+    const [fileAnswers, setFileAnswers] = useState<Record<number, File>>({});
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showWarning, setShowWarning] = useState(false);
     const [warningMessage, setWarningMessage] = useState('');
 
-    // Anti-cheat hook
+    // Anti-cheat hook with 10K+ security
     const antiCheat = useAntiCheat({
         onViolation: (type, count) => {
-            console.log(`Violation: ${type}, count: ${count}`);
-            if (type === 'tab_switch') {
-                setWarningMessage(`Warning: Tab switch detected (${count}/3). Multiple switches may flag your test.`);
+            console.log(`Security Violation: ${type}, count: ${count}`);
+
+            // Report ALL violations to backend
+            reportViolation(type);
+
+            if (type === 'tab_switch' || type === 'window_blur') {
+                const max = session?.max_tab_switches_allowed || 3;
+                setWarningMessage(`⚠️ Focus lost (${count}/${max}). Stay on this page.`);
                 setShowWarning(true);
-                // Report to backend
-                reportViolation('tab_switch');
             } else if (type === 'fullscreen_exit') {
-                setWarningMessage(`Warning: Fullscreen exit detected (${count}/2). Please stay in fullscreen mode.`);
+                setWarningMessage(`⚠️ Fullscreen exit detected. Please stay in fullscreen mode.`);
                 setShowWarning(true);
-                reportViolation('fullscreen_exit');
+            } else if (type === 'devtools_open') {
+                setWarningMessage(`🚨 Developer Tools detected! This has been flagged.`);
+                setShowWarning(true);
+            } else if (type === 'shortcut_blocked') {
+                setWarningMessage(`⚠️ Keyboard shortcuts are disabled during the test.`);
+                setShowWarning(true);
+            } else if (type === 'copy_attempt' || type === 'paste_attempt') {
+                setWarningMessage(`⚠️ Copy/Paste is disabled during the test.`);
+                setShowWarning(true);
             }
         },
-        maxTabSwitches: 3,
+        maxTabSwitches: session?.max_tab_switches_allowed || 3,
         maxFullscreenExits: 2,
         enableCopyProtection: true,
-        enableFullscreenMode: true
+        enableFullscreenMode: true,
+        enableTabDetection: session?.enable_tab_switch_detection ?? true
     });
 
     // Timer hook
@@ -66,7 +95,7 @@ export default function TestTaking() {
     const reportViolation = async (type: string) => {
         if (!session) return;
         try {
-            const token = localStorage.getItem('token');
+            const token = localStorage.getItem('access_token');
             await fetch(`${API_BASE_URL}/tests/flag-violation/${session.attempt_id}?violation_type=${type}`, {
                 method: 'POST',
                 headers: {
@@ -82,7 +111,7 @@ export default function TestTaking() {
     useEffect(() => {
         const startTest = async () => {
             try {
-                const token = localStorage.getItem('token');
+                const token = localStorage.getItem('access_token');
                 const response = await fetch(`${API_BASE_URL}/tests/start`, {
                     method: 'POST',
                     headers: {
@@ -96,14 +125,15 @@ export default function TestTaking() {
                     const data = await response.json();
                     setSession(data);
                     timer.start();
-                    // Request fullscreen
-                    antiCheat.requestFullscreen();
+                    // Fullscreen removed - must be user-initiated per browser security policy
                 } else {
-                    navigate('/tests');
+                    // navigate('/tests');
+                    setLoading(false);
                 }
             } catch (error) {
                 console.error('Failed to start test:', error);
-                navigate('/tests');
+                // navigate('/tests');
+                setLoading(false);
             } finally {
                 setLoading(false);
             }
@@ -119,6 +149,65 @@ export default function TestTaking() {
         setAnswers(prev => ({ ...prev, [questionId]: answer }));
     }, []);
 
+    // Auto-save answers to localStorage (offline resilience)
+    useEffect(() => {
+        if (!session) return;
+        const saveKey = `test_answers_${session.attempt_id}`;
+
+        // Save to localStorage every 5 seconds
+        const localSaveInterval = setInterval(() => {
+            localStorage.setItem(saveKey, JSON.stringify({
+                answers,
+                savedAt: new Date().toISOString(),
+                questionIndex: currentQuestionIndex
+            }));
+        }, 5000);
+
+        // Restore saved answers on mount
+        const saved = localStorage.getItem(saveKey);
+        if (saved) {
+            try {
+                const { answers: savedAnswers } = JSON.parse(saved);
+                if (savedAnswers && Object.keys(savedAnswers).length > 0) {
+                    setAnswers(prev => ({ ...savedAnswers, ...prev }));
+                }
+            } catch (e) {
+                console.warn('Failed to restore saved answers');
+            }
+        }
+
+        return () => clearInterval(localSaveInterval);
+    }, [session, answers, currentQuestionIndex]);
+
+    // Sync answers to backend periodically (every 30s)
+    useEffect(() => {
+        if (!session) return;
+        const token = localStorage.getItem('access_token');
+
+        const syncToBackend = async () => {
+            for (const [questionId, answerText] of Object.entries(answers)) {
+                try {
+                    await fetch(`${API_BASE_URL}/tests/submit-answer?attempt_id=${session.attempt_id}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            question_id: parseInt(questionId),
+                            answer_text: answerText
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Auto-sync failed, will retry');
+                }
+            }
+        };
+
+        const syncInterval = setInterval(syncToBackend, 30000);
+        return () => clearInterval(syncInterval);
+    }, [session, answers]);
+
     // Navigate questions
     const goToQuestion = (index: number) => {
         if (index >= 0 && index < (session?.questions.length || 0)) {
@@ -132,10 +221,29 @@ export default function TestTaking() {
 
         setSubmitting(true);
         try {
-            const token = localStorage.getItem('token');
+            const token = localStorage.getItem('access_token');
 
-            // Submit all answers
+            // Upload files first (for agent_analysis questions)
+            for (const [questionId, file] of Object.entries(fileAnswers)) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('attempt_id', session.attempt_id.toString());
+                formData.append('question_id', questionId);
+
+                await fetch(`${API_BASE_URL}/tests/upload-answer-file`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+            }
+
+            // Submit all text answers
             for (const [questionId, answerText] of Object.entries(answers)) {
+                // Skip file answers (they're already uploaded)
+                if (answerText.startsWith('FILE:')) continue;
+
                 await fetch(`${API_BASE_URL}/tests/submit-answer?attempt_id=${session.attempt_id}`, {
                     method: 'POST',
                     headers: {
@@ -153,8 +261,13 @@ export default function TestTaking() {
             const response = await fetch(`${API_BASE_URL}/tests/complete/${session.attempt_id}`, {
                 method: 'POST',
                 headers: {
+                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
-                }
+                },
+                body: JSON.stringify({
+                    attempt_id: session.attempt_id,
+                    tab_switches: antiCheat.tabSwitches
+                })
             });
 
             if (response.ok) {
@@ -182,14 +295,32 @@ export default function TestTaking() {
         return (
             <div className="test-error">
                 <p>Failed to load test. Please try again.</p>
-                <button onClick={() => navigate('/tests')}>Back to Tests</button>
+                <button onClick={() => navigate('/opportunities')}>Back to Opportunities</button>
+            </div>
+        );
+    }
+
+    // Handle empty questions case
+    if (!session.questions || session.questions.length === 0) {
+        return (
+            <div className="test-error">
+                <p>No questions available for this test.</p>
+                <button onClick={() => navigate('/opportunities')}>Back to Opportunities</button>
             </div>
         );
     }
 
     const currentQuestion = session.questions[currentQuestionIndex];
-    const answeredCount = Object.keys(answers).length;
-    const progress = (answeredCount / session.total_questions) * 100;
+    if (!currentQuestion) {
+        return (
+            <div className="test-error">
+                <p>Question not found.</p>
+                <button onClick={() => navigate('/opportunities')}>Back to Opportunities</button>
+            </div>
+        );
+    }
+    // const answeredCount = Object.keys(answers).length;
+    // const progress = (answeredCount / session.total_questions) * 100;
 
     return (
         <div className="test-taking-page">
@@ -212,6 +343,9 @@ export default function TestTaking() {
                         Question {currentQuestionIndex + 1} of {session.total_questions}
                     </span>
                 </div>
+
+                {/* Question nav grid removed - redundant with Question X of Y */}
+
                 <div className="test-timer" data-urgent={timer.timeRemaining < 300}>
                     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
                         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" />
@@ -220,13 +354,7 @@ export default function TestTaking() {
                 </div>
             </header>
 
-            {/* Progress Bar */}
-            <div className="test-progress">
-                <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${progress}%` }}></div>
-                </div>
-                <span className="progress-text">{answeredCount}/{session.total_questions} answered</span>
-            </div>
+            {/* Progress Bar removed as per request */}
 
             {/* Anti-cheat status */}
             {antiCheat.isFlagged && (
@@ -237,26 +365,7 @@ export default function TestTaking() {
 
             {/* Main Content */}
             <div className="test-content">
-                {/* Question Navigation Sidebar */}
-                <aside className="question-nav">
-                    <h3>Questions</h3>
-                    <div className="question-grid">
-                        {session.questions.map((q, idx) => (
-                            <button
-                                key={q.id}
-                                className={`question-btn ${idx === currentQuestionIndex ? 'active' : ''} ${answers[q.id] ? 'answered' : ''}`}
-                                onClick={() => goToQuestion(idx)}
-                            >
-                                {idx + 1}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="nav-legend">
-                        <span><span className="dot answered"></span> Answered</span>
-                        <span><span className="dot current"></span> Current</span>
-                        <span><span className="dot"></span> Not answered</span>
-                    </div>
-                </aside>
+                {/* Sidebar Removed */}
 
                 {/* Question Display */}
                 <main className="question-area">
@@ -293,7 +402,7 @@ export default function TestTaking() {
                         )}
 
                         {/* Text Annotation */}
-                        {currentQuestion.question_type === 'text_annotation' && (
+                        {(currentQuestion.question_type === 'text_annotation' || currentQuestion.question_type === 'text' || currentQuestion.question_type === 'reading') && (
                             <div className="text-annotation-area">
                                 <textarea
                                     placeholder="Enter your annotation..."
@@ -305,16 +414,131 @@ export default function TestTaking() {
                         )}
 
                         {/* Image Annotation */}
-                        {currentQuestion.question_type === 'image_annotation' && currentQuestion.media_url && (
+                        {(currentQuestion.question_type === 'image_annotation' || currentQuestion.question_type === 'image') && (
                             <div className="image-annotation-area">
-                                <img src={currentQuestion.media_url} alt="Annotation target" />
-                                <p className="annotation-hint">Image annotation tool would be here</p>
+                                {currentQuestion.media_url && (
+                                    <img src={getMediaUrl(currentQuestion.media_url)} alt="Annotation target" />
+                                )}
                                 <textarea
-                                    placeholder="Describe your annotations..."
+                                    placeholder="Describe what you see in the image..."
                                     value={answers[currentQuestion.id] || ''}
                                     onChange={(e) => handleSelectAnswer(currentQuestion.id, e.target.value)}
                                     rows={4}
                                 />
+                            </div>
+                        )}
+
+                        {/* Video Annotation */}
+                        {(currentQuestion.question_type === 'video_annotation' || currentQuestion.question_type === 'video') && (
+                            <div className="video-annotation-area">
+                                {currentQuestion.media_url && (
+                                    <video controls>
+                                        <source src={getMediaUrl(currentQuestion.media_url)} type="video/mp4" />
+                                        Your browser does not support video playback.
+                                    </video>
+                                )}
+                                <textarea
+                                    placeholder="Describe what you observed in the video..."
+                                    value={answers[currentQuestion.id] || ''}
+                                    onChange={(e) => handleSelectAnswer(currentQuestion.id, e.target.value)}
+                                    rows={4}
+                                />
+                            </div>
+                        )}
+
+                        {/* Agent Analysis */}
+                        {currentQuestion.question_type === 'agent_analysis' && (
+                            <div className="agent-analysis-area">
+                                <InPageBrowser
+                                    htmlUrl={
+                                        currentQuestion.html_content?.startsWith('/') ||
+                                            currentQuestion.html_content?.startsWith('http')
+                                            ? (currentQuestion.html_content.startsWith('/')
+                                                ? getMediaUrl(currentQuestion.html_content)
+                                                : `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/tests/content-proxy?url=${encodeURIComponent(currentQuestion.html_content)}`)
+                                            : undefined
+                                    }
+                                    htmlContent={
+                                        currentQuestion.html_content?.startsWith('/') ||
+                                            currentQuestion.html_content?.startsWith('http')
+                                            ? undefined
+                                            : currentQuestion.html_content || ''
+                                    }
+                                    documents={(currentQuestion.documents || []).map(d => {
+                                        const isOffice = /\.(docx?|xlsx?|pptx?)$/i.test(d.content || '');
+                                        let contentUrl = d.content;
+
+                                        if (d.content?.startsWith('/')) {
+                                            contentUrl = getMediaUrl(d.content);
+                                        } else if (d.content?.startsWith('http')) {
+                                            if (isOffice) {
+                                                // Use MS Office Viewer for Office files (better compatibility)
+                                                contentUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(d.content)}`;
+                                            } else {
+                                                // Use proxy for others (HTML, PDF, etc)
+                                                contentUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/tests/content-proxy?url=${encodeURIComponent(d.content)}`;
+                                            }
+                                        }
+
+                                        return {
+                                            id: d.id,
+                                            title: d.title,
+                                            content: contentUrl
+                                        };
+                                    })}
+                                />
+                                <div className="agent-answer-section">
+                                    <label>Upload Your Report</label>
+                                    <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
+                                        Submit your analysis as an Excel file (.xlsx, .xls, .csv)
+                                    </p>
+                                    <div className="file-upload-area">
+                                        <input
+                                            type="file"
+                                            id={`file-upload-${currentQuestion.id}`}
+                                            accept=".xlsx,.xls,.csv"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                    // Store file name as answer display
+                                                    handleSelectAnswer(currentQuestion.id, `FILE:${file.name}`);
+                                                    // Store actual file for upload
+                                                    setFileAnswers(prev => ({ ...prev, [currentQuestion.id]: file }));
+                                                }
+                                            }}
+                                            style={{ display: 'none' }}
+                                        />
+                                        <label
+                                            htmlFor={`file-upload-${currentQuestion.id}`}
+                                            className="file-upload-label"
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                padding: '24px',
+                                                border: '2px dashed #e2e8f0',
+                                                borderRadius: '12px',
+                                                cursor: 'pointer',
+                                                background: '#f8fafc',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="1.5">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                                <polyline points="17 8 12 3 7 8" />
+                                                <line x1="12" y1="3" x2="12" y2="15" />
+                                            </svg>
+                                            <span style={{ marginTop: '8px', fontWeight: 600, color: '#1e293b' }}>
+                                                {answers[currentQuestion.id]?.startsWith('FILE:')
+                                                    ? answers[currentQuestion.id].replace('FILE:', '✅ ')
+                                                    : 'Click to upload Excel file'}
+                                            </span>
+                                            <span style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                                                Supports .xlsx, .xls, .csv
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>

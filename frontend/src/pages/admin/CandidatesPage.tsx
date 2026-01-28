@@ -3,7 +3,7 @@ import { adminApiService } from '../../services/api';
 import {
     Search, User, Mail, Phone, Calendar, GraduationCap, Building2,
     X, Send, MessageSquare, Eye, Clock,
-    CheckCircle, XCircle
+    CheckCircle, XCircle, FileText, ExternalLink, Briefcase
 } from 'lucide-react';
 import './CandidatesPage.css';
 
@@ -38,6 +38,14 @@ interface CandidateProfile {
     solved_medium: number;
     solved_hard: number;
     badges_count: number;
+    // Resume data
+    resume_url?: string;
+    professional_summary?: string;
+    skills?: string[];
+    years_of_experience?: number;
+    current_role?: string;
+    linkedin_url?: string;
+    github_url?: string;
     test_attempts: Array<{
         test_id: number;
         status: string;
@@ -159,6 +167,7 @@ export default function CandidatesPage() {
     const [selectedCandidate, setSelectedCandidate] = useState<CandidateProfile | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [profileLoading, setProfileLoading] = useState(false);
+    const [showResume, setShowResume] = useState(false);
 
     // Message modal
     const [messageModal, setMessageModal] = useState<{ open: boolean; candidateId: number; candidateName: string }>({
@@ -439,6 +448,68 @@ export default function CandidatesPage() {
                                     </div>
                                 )}
 
+                                {/* Professional Summary */}
+                                {selectedCandidate.professional_summary && (
+                                    <div className="profile-section">
+                                        <h4><Briefcase size={16} /> Professional Summary</h4>
+                                        <p className="summary-text">{selectedCandidate.professional_summary}</p>
+                                    </div>
+                                )}
+
+                                {/* Skills */}
+                                {selectedCandidate.skills && selectedCandidate.skills.length > 0 && (
+                                    <div className="profile-section">
+                                        <h4>Skills</h4>
+                                        <div className="skills-grid">
+                                            {selectedCandidate.skills.map((skill, i) => (
+                                                <span key={i} className="skill-tag">{skill}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Resume */}
+                                {selectedCandidate.resume_url && (
+                                    <div className="profile-section">
+                                        <h4><FileText size={16} /> Resume</h4>
+                                        <div className="resume-actions">
+                                            <button
+                                                className="btn-outline view-resume-btn"
+                                                onClick={() => setShowResume(true)}
+                                            >
+                                                <Eye size={16} /> View Resume
+                                            </button>
+                                            <a
+                                                href={selectedCandidate.resume_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="btn-outline"
+                                            >
+                                                <ExternalLink size={16} /> Open in New Tab
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Links */}
+                                {(selectedCandidate.linkedin_url || selectedCandidate.github_url) && (
+                                    <div className="profile-section">
+                                        <h4>Links</h4>
+                                        <div className="links-grid">
+                                            {selectedCandidate.linkedin_url && (
+                                                <a href={selectedCandidate.linkedin_url} target="_blank" rel="noopener noreferrer" className="link-item">
+                                                    <ExternalLink size={14} /> LinkedIn
+                                                </a>
+                                            )}
+                                            {selectedCandidate.github_url && (
+                                                <a href={selectedCandidate.github_url} target="_blank" rel="noopener noreferrer" className="link-item">
+                                                    <ExternalLink size={14} /> GitHub
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Actions */}
                                 <div className="drawer-actions">
                                     <button className="btn-secondary" onClick={() => handleOpenMessage(selectedCandidate.id, selectedCandidate.name)}>
@@ -495,6 +566,27 @@ export default function CandidatesPage() {
                                 <Send size={16} />
                                 {sending ? 'Sending...' : 'Send Message'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Resume Viewer Modal */}
+            {showResume && selectedCandidate?.resume_url && (
+                <div className="modal-overlay resume-modal-overlay" onClick={() => setShowResume(false)}>
+                    <div className="resume-modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2><FileText size={20} /> Resume - {selectedCandidate.name}</h2>
+                            <button className="close-btn" onClick={() => setShowResume(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="resume-viewer">
+                            <iframe
+                                src={selectedCandidate.resume_url}
+                                title="Resume"
+                                className="resume-iframe"
+                            />
                         </div>
                     </div>
                 </div>

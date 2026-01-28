@@ -73,6 +73,11 @@ export const jobsApi = {
         const response = await api.get('/jobs/stats');
         return response.data;
     },
+
+    startAssessment: async (jobId: number): Promise<{ test_id: number }> => {
+        const response = await api.post(`/jobs/${jobId}/start-assessment`);
+        return response.data;
+    },
 };
 
 // Courses API
@@ -156,6 +161,10 @@ export const adminApiService = {
         const response = await adminApi.delete(`/divisions/${id}`);
         return response.data;
     },
+    updateDivisionDocuments: async (id: number, documents: Array<{ id: string; title: string; content: string }>) => {
+        const response = await adminApi.put(`/divisions/${id}/documents`, documents);
+        return response.data;
+    },
 
     // Questions
     getQuestions: async (filters?: { question_type?: string; difficulty?: string; division_id?: number }) => {
@@ -204,12 +213,22 @@ export const adminApiService = {
         text_annotation?: { enabled: boolean; count: number; marks_per_question: number };
         image_annotation?: { enabled: boolean; count: number; marks_per_question: number };
         video_annotation?: { enabled: boolean; count: number; marks_per_question: number };
+        enable_tab_switch_detection?: boolean;
+        max_tab_switches_allowed?: number;
     }) => {
         const response = await adminApi.post('/tests/generate', data);
         return response.data;
     },
     publishTest: async (testId: number) => {
         const response = await adminApi.post(`/tests/${testId}/publish`);
+        return response.data;
+    },
+    deleteTest: async (testId: number) => {
+        const response = await adminApi.delete(`/tests/${testId}`);
+        return response.data;
+    },
+    getTestPreview: async (testId: number) => {
+        const response = await adminApi.get(`/tests/${testId}/preview`);
         return response.data;
     },
 
@@ -242,7 +261,7 @@ export const adminApiService = {
     },
 
     // File Upload
-    uploadFile: async (file: File, fileType: 'video' | 'image') => {
+    uploadFile: async (file: File, fileType: 'video' | 'image' | 'html' | 'document') => {
         const formData = new FormData();
         formData.append('file', file);
         // Set Content-Type to undefined to remove default JSON header
@@ -276,6 +295,7 @@ export const adminApiService = {
         job_type?: string;
         round_date?: string;
         description?: string;
+        test_id?: number;
     }) => {
         const response = await adminApi.post('/jobs', null, { params: data });
         return response.data;
@@ -294,6 +314,24 @@ export const adminApiService = {
     },
     deleteJob: async (jobId: number) => {
         const response = await adminApi.delete(`/jobs/${jobId}`);
+        return response.data;
+    },
+
+    // Test Results
+    getTestResults: async () => {
+        const response = await adminApi.get('/test-results');
+        return response.data;
+    },
+    downloadAnswerFile: async (resultId: number) => {
+        const response = await adminApi.get(`/test-results/${resultId}/download`, {
+            responseType: 'blob'
+        });
+        return response.data;
+    },
+    updateQuestionScore: async (attemptId: number, questionId: number, score: number) => {
+        const response = await adminApi.put(`/test-results/${attemptId}/score`, null, {
+            params: { question_id: questionId, score }
+        });
         return response.data;
     },
 };

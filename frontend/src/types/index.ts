@@ -49,12 +49,14 @@ export interface Job {
     is_active: boolean;
     created_at: string;
     application_status?: JobStatus;
+    test_id?: number;
 }
 
 export interface JobStats {
     total_jobs: number;
     placed: number;
     waiting: number;
+    applied: number;
     rejected: number;
 }
 

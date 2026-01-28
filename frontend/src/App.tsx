@@ -19,9 +19,9 @@ import Profile from './pages/Profile';
 import Notifications from './pages/Notifications';
 
 // Test Components
-import TestsList from './pages/test/TestsList';
 import TestTaking from './pages/test/TestTaking';
 import TestResult from './pages/test/TestResult';
+import InPageBrowserDemo from './pages/InPageBrowserDemo';
 
 // Admin Components
 import AdminLayout from './components/AdminLayout/AdminLayout';
@@ -33,6 +33,7 @@ import CandidatesPage from './pages/admin/CandidatesPage';
 import ReportsPage from './pages/admin/ReportsPage';
 import AdminAnnouncements from './pages/admin/AdminAnnouncements';
 import DivisionManagement from './pages/admin/DivisionManagement';
+import AdminResults from './pages/admin/AdminResults';
 
 
 import './index.css';
@@ -141,14 +142,13 @@ function App() {
                 {isAuthenticated ? (
                     <Route element={<Layout user={user} onLogout={handleLogout} />}>
                         <Route path="/dashboard" element={<Dashboard user={user} />} />
-                        <Route path="/jobs" element={<Jobs />} />
+                        <Route path="/opportunities" element={<Jobs />} />
                         <Route path="/courses" element={<Courses />} />
                         <Route path="/assessments" element={<Assessments />} />
                         <Route path="/company-tests" element={<Assessments />} />
                         <Route path="/profile" element={<Profile user={user} />} />
                         <Route path="/ide" element={<div className="dashboard"><h1>Open IDE</h1><p>IDE integration coming soon...</p></div>} />
                         <Route path="/notifications" element={<Notifications />} />
-                        <Route path="/tests" element={<TestsList />} />
                     </Route>
                 ) : null}
 
@@ -159,6 +159,9 @@ function App() {
                         <Route path="/test-result/:attemptId" element={<TestResult />} />
                     </>
                 )}
+
+                {/* Demo Route - In-Page Browser */}
+                <Route path="/demo/browser" element={<InPageBrowserDemo />} />
 
                 {/* Admin Routes */}
                 <Route
@@ -175,6 +178,7 @@ function App() {
                         <Route path="reports" element={<ReportsPage />} />
                         <Route path="announcements" element={<AdminAnnouncements />} />
                         <Route path="divisions" element={<DivisionManagement />} />
+                        <Route path="results" element={<AdminResults />} />
                     </Route>
                 ) : (
                     <Route path="/admin/*" element={<Navigate to="/admin/login" />} />

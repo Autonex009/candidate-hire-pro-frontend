@@ -18,6 +18,7 @@ interface UseAntiCheatOptions {
     maxFullscreenExits?: number;
     enableCopyProtection?: boolean;
     enableFullscreenMode?: boolean;
+    enableTabDetection?: boolean;
 }
 
 export function useAntiCheat(options: UseAntiCheatOptions = {}) {
@@ -26,7 +27,8 @@ export function useAntiCheat(options: UseAntiCheatOptions = {}) {
         maxTabSwitches = 3,
         maxFullscreenExits = 2,
         enableCopyProtection = true,
-        enableFullscreenMode = true
+        enableFullscreenMode = true,
+        enableTabDetection = true
     } = options;
 
     const [state, setState] = useState<AntiCheatState>({
@@ -42,6 +44,8 @@ export function useAntiCheat(options: UseAntiCheatOptions = {}) {
 
     // Tab visibility detection
     useEffect(() => {
+        if (!enableTabDetection) return;
+
         const handleVisibilityChange = () => {
             if (document.hidden) {
                 const newCount = stateRef.current.tabSwitches + 1;
@@ -59,7 +63,7 @@ export function useAntiCheat(options: UseAntiCheatOptions = {}) {
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [onViolation, maxTabSwitches]);
+    }, [onViolation, maxTabSwitches, enableTabDetection]);
 
     // Fullscreen detection
     useEffect(() => {
@@ -126,6 +130,86 @@ export function useAntiCheat(options: UseAntiCheatOptions = {}) {
         };
     }, [enableCopyProtection, onViolation]);
 
+    // DevTools Detection (10K+ Security)
+    useEffect(() => {
+        const devToolsThreshold = 160;
+        let devToolsOpen = false;
+
+        const detectDevTools = () => {
+            const widthThreshold = window.outerWidth - window.innerWidth > devToolsThreshold;
+            const heightThreshold = window.outerHeight - window.innerHeight > devToolsThreshold;
+
+            if ((widthThreshold || heightThreshold) && !devToolsOpen) {
+                devToolsOpen = true;
+                onViolation?.('devtools_open', 1);
+            } else if (!widthThreshold && !heightThreshold) {
+                devToolsOpen = false;
+            }
+        };
+
+        const interval = setInterval(detectDevTools, 1000);
+        return () => clearInterval(interval);
+    }, [onViolation]);
+
+    // Keyboard Shortcut Blocking (F12, Ctrl+Shift+I, etc.)
+    useEffect(() => {
+        const blockShortcuts = (e: KeyboardEvent) => {
+            // F12
+            if (e.key === 'F12') {
+                e.preventDefault();
+                onViolation?.('shortcut_blocked', 1);
+                return;
+            }
+            // Ctrl/Cmd + Shift + I (DevTools)
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'i') {
+                e.preventDefault();
+                onViolation?.('shortcut_blocked', 1);
+                return;
+            }
+            // Ctrl/Cmd + Shift + J (Console)
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'j') {
+                e.preventDefault();
+                onViolation?.('shortcut_blocked', 1);
+                return;
+            }
+            // Ctrl/Cmd + U (View Source)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'u') {
+                e.preventDefault();
+                onViolation?.('shortcut_blocked', 1);
+                return;
+            }
+            // Ctrl/Cmd + S (Save Page)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                return;
+            }
+            // Ctrl/Cmd + P (Print)
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+                e.preventDefault();
+                return;
+            }
+        };
+
+        document.addEventListener('keydown', blockShortcuts);
+        return () => document.removeEventListener('keydown', blockShortcuts);
+    }, [onViolation]);
+
+    // Window Blur Detection (Alt+Tab, etc.)
+    useEffect(() => {
+        const handleBlur = () => {
+            const newCount = stateRef.current.tabSwitches + 1;
+            setState(prev => ({
+                ...prev,
+                tabSwitches: newCount,
+                isFlagged: prev.isFlagged || newCount >= maxTabSwitches
+            }));
+            onViolation?.('window_blur', newCount);
+        };
+
+        window.addEventListener('blur', handleBlur);
+        return () => window.removeEventListener('blur', handleBlur);
+    }, [onViolation, maxTabSwitches]);
+
     // Request fullscreen
     const requestFullscreen = useCallback(async () => {
         if (!enableFullscreenMode) return;
@@ -161,6 +245,11 @@ export function useTestTimer(durationMinutes: number, onTimeUp?: () => void) {
     const [timeRemaining, setTimeRemaining] = useState(durationMinutes * 60);
     const [isRunning, setIsRunning] = useState(false);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // Sync timer with duration prop changes (e.g. after data load)
+    useEffect(() => {
+        setTimeRemaining(durationMinutes * 60);
+    }, [durationMinutes]);
 
     useEffect(() => {
         if (isRunning && timeRemaining > 0) {

@@ -58,10 +58,24 @@ export default function AdminLayout({ onLogout }: AdminLayoutProps) {
                         <span>Dashboard</span>
                     </NavLink>
 
-                    <NavLink to="/admin/tests" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
-                        <TestsIcon />
-                        <span>Test Management</span>
-                    </NavLink>
+                    {/* Test Management Section with Sub-items */}
+                    <div className="nav-section">
+                        <div className="nav-section-label">
+                            <TestsIcon />
+                            <span>Test Management</span>
+                        </div>
+                        <div className="nav-subitems">
+                            <NavLink to="/admin/tests" className={({ isActive }) => `admin-nav-subitem ${isActive ? 'active' : ''}`}>
+                                <span>Tests & Generator</span>
+                            </NavLink>
+                            <NavLink to="/admin/results" className={({ isActive }) => `admin-nav-subitem ${isActive ? 'active' : ''}`}>
+                                <span>Test Results</span>
+                            </NavLink>
+                            <NavLink to="/admin/divisions" className={({ isActive }) => `admin-nav-subitem ${isActive ? 'active' : ''}`}>
+                                <span>Divisions</span>
+                            </NavLink>
+                        </div>
+                    </div>
 
                     <NavLink to="/admin/jobs" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
                         <JobsIcon />
@@ -83,13 +97,6 @@ export default function AdminLayout({ onLogout }: AdminLayoutProps) {
                             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z" />
                         </svg>
                         <span>Announcements</span>
-                    </NavLink>
-
-                    <NavLink to="/admin/divisions" className={({ isActive }) => `admin-nav-item ${isActive ? 'active' : ''}`}>
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />
-                        </svg>
-                        <span>Divisions</span>
                     </NavLink>
                 </nav>
 

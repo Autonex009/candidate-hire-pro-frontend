@@ -1,13 +1,20 @@
-import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Check, X, Layers } from 'lucide-react';
-import { adminApiService } from '../../services/api';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Edit2, Trash2, Check, X, Layers, FileText, Upload } from 'lucide-react';
+import { adminApiService, API_HOST } from '../../services/api';
 import './DivisionManagement.css';
+
+interface Document {
+    id: string;
+    title: string;
+    content: string; // Can be text or file URL
+}
 
 interface Division {
     id: number;
     name: string;
     description: string | null;
     is_active: boolean;
+    documents?: Document[];
     created_at: string;
     test_count: number;
 }
@@ -20,6 +27,13 @@ export default function DivisionManagement() {
     const [formData, setFormData] = useState({ name: '', description: '' });
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+
+    // Documents modal state
+    const [docsModalOpen, setDocsModalOpen] = useState(false);
+    const [selectedDivision, setSelectedDivision] = useState<Division | null>(null);
+    const [documents, setDocuments] = useState<Document[]>([]);
+    const [savingDocs, setSavingDocs] = useState(false);
+    const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
     useEffect(() => {
         fetchDivisions();
@@ -111,6 +125,91 @@ export default function DivisionManagement() {
         setShowForm(false);
         setEditingId(null);
         setFormData({ name: '', description: '' });
+    };
+
+    // Documents management
+    const openDocsModal = (division: Division) => {
+        setSelectedDivision(division);
+
+        // Always pad to 4 documents
+        const existingDocs = division.documents || [];
+        const paddedDocs = [...existingDocs];
+        while (paddedDocs.length < 4) {
+            paddedDocs.push({
+                id: `new-${Date.now()}-${paddedDocs.length}`,
+                title: '',
+                content: ''
+            });
+        }
+
+        setDocuments(paddedDocs);
+        setDocsModalOpen(true);
+    };
+
+    const closeDocsModal = () => {
+        setDocsModalOpen(false);
+        setSelectedDivision(null);
+        setDocuments([]);
+    };
+
+    const handleDocChange = (index: number, field: 'title' | 'content', value: string) => {
+        setDocuments(prev => prev.map((doc, i) =>
+            i === index ? { ...doc, [field]: value } : doc
+        ));
+    };
+
+    const handleFileUpload = async (index: number, file: File) => {
+        // Upload the file and get URL
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', 'document');
+
+        try {
+            const response = await fetch(`${API_HOST}/api/admin/upload`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('admin_token') || localStorage.getItem('access_token')}`
+                },
+                body: formData
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                handleDocChange(index, 'content', data.url);
+                setSuccess('File uploaded successfully');
+                setTimeout(() => setSuccess(null), 2000);
+            } else {
+                setError('Failed to upload file');
+            }
+        } catch (err) {
+            console.error('Upload error:', err);
+            setError('Failed to upload file');
+        }
+    };
+
+    const handleSaveDocs = async () => {
+        if (!selectedDivision) return;
+
+        setSavingDocs(true);
+        try {
+            // Filter out empty documents
+            const validDocs = documents.filter(d => d.title.trim() || d.content.trim());
+            await adminApiService.updateDivisionDocuments(selectedDivision.id, validDocs);
+
+            // Update local state
+            setDivisions(prev => prev.map(d =>
+                d.id === selectedDivision.id ? { ...d, documents: validDocs } : d
+            ));
+
+            setSuccess('Documents saved successfully');
+            closeDocsModal();
+            setTimeout(() => setSuccess(null), 3000);
+        } catch (err) {
+            console.error('Failed to save documents:', err);
+            setError('Failed to save documents');
+        } finally {
+            setSavingDocs(false);
+        }
     };
 
     return (
@@ -213,12 +312,22 @@ export default function DivisionManagement() {
                                     <span className="test-count">
                                         📋 {division.test_count} {division.test_count === 1 ? 'test' : 'tests'}
                                     </span>
+                                    <span className="doc-count">
+                                        📄 {(division.documents || []).filter(d => d.title).length} docs
+                                    </span>
                                     <span className={`status ${division.is_active ? 'active' : 'inactive'}`}>
                                         {division.is_active ? '✓ Active' : '○ Inactive'}
                                     </span>
                                 </div>
                             </div>
                             <div className="division-actions">
+                                <button
+                                    className="action-btn docs"
+                                    onClick={() => openDocsModal(division)}
+                                    title="Manage Shared Documents"
+                                >
+                                    <FileText size={16} />
+                                </button>
                                 <button
                                     className="action-btn toggle"
                                     onClick={() => handleToggleActive(division)}
@@ -246,6 +355,93 @@ export default function DivisionManagement() {
                     ))
                 )}
             </div>
+
+            {/* Documents Modal */}
+            {docsModalOpen && selectedDivision && (
+                <div className="modal-overlay" onClick={closeDocsModal}>
+                    <div className="modal docs-modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2><FileText size={20} /> Shared Documents for "{selectedDivision.name}"</h2>
+                            <button className="close-btn" onClick={closeDocsModal}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p className="docs-info">
+                                These documents will be available to all Agent Analysis questions in this division.
+                            </p>
+                            <div className="docs-list">
+                                {documents.map((doc, index) => (
+                                    <div key={doc.id} className="doc-item">
+                                        <div className="doc-header">
+                                            <span className="doc-number">Document {index + 1}</span>
+                                            {(doc.title || doc.content) && (
+                                                <button
+                                                    className="remove-doc-btn"
+                                                    onClick={() => {
+                                                        handleDocChange(index, 'title', '');
+                                                        handleDocChange(index, 'content', '');
+                                                    }}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: '#ef4444',
+                                                        fontSize: '12px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }}
+                                                >
+                                                    <Trash2 size={12} /> Clear
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="doc-fields">
+                                            <input
+                                                type="text"
+                                                placeholder="Document Title"
+                                                value={doc.title}
+                                                onChange={e => handleDocChange(index, 'title', e.target.value)}
+                                            />
+                                            <div className="content-field">
+                                                <textarea
+                                                    placeholder="Document content or paste URL..."
+                                                    value={doc.content}
+                                                    onChange={e => handleDocChange(index, 'content', e.target.value)}
+                                                    rows={4}
+                                                />
+                                                <div className="upload-section">
+                                                    <input
+                                                        type="file"
+                                                        ref={el => { fileInputRefs.current[index] = el; }}
+                                                        onChange={e => e.target.files?.[0] && handleFileUpload(index, e.target.files[0])}
+                                                        accept=".pdf,.doc,.docx,.txt,.csv,.xlsx"
+                                                        style={{ display: 'none' }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        className="upload-btn"
+                                                        onClick={() => fileInputRefs.current[index]?.click()}
+                                                    >
+                                                        <Upload size={14} /> Upload File
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn-secondary" onClick={closeDocsModal}>Cancel</button>
+                            <button className="btn-primary" onClick={handleSaveDocs} disabled={savingDocs}>
+                                {savingDocs ? 'Saving...' : 'Save Documents'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

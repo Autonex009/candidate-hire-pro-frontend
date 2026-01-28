@@ -1,103 +1,73 @@
+/* ============================================
+   HEADER.CSS - Premium Navy Glass Redesign (CLEANED)
+   ============================================ */
+
+/* ----------------------------------
+   1. MAIN HEADER CONTAINER
+   ---------------------------------- */
 .header {
     position: fixed;
     top: 0;
-    left: var(--sidebar-width);
+    left: var(--layout-offset-collapsed);
     right: 0;
-    height: 70px;
-    background: var(--color-bg-secondary);
+    height: 74px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 var(--spacing-xl);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-    z-index: 50;
-    transition: left 0.3s ease;
+    padding: 0 32px;
+    box-shadow:
+        0 4px 6px -1px rgba(0, 0, 0, 0.02),
+        0 2px 4px -1px rgba(0, 0, 0, 0.02),
+        inset 0 -1px 0 0 rgba(255, 255, 255, 0.6);
+    z-index: 900;
+    transition: left 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+    margin-bottom: 24px;
 }
 
 /* Adjust header when sidebar expands */
 .layout:has(.sidebar:hover) .header {
-    left: var(--sidebar-expanded-width);
+    left: var(--layout-offset-expanded);
 }
 
 .header-left {
     display: flex;
     align-items: center;
-    gap: var(--spacing-lg);
-}
-
-.header-title {
-    font-size: var(--font-lg);
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-
-.header-search {
-    flex: 1;
-    max-width: 450px;
-    margin: 0 var(--spacing-xl);
-}
-
-.search-wrapper {
-    position: relative;
-    width: 100%;
-}
-
-.search-icon {
-    position: absolute;
-    left: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--color-text-muted);
-    width: 18px;
-    height: 18px;
-    pointer-events: none;
-}
-
-.search-input {
-    width: 100%;
-    height: 44px;
-    padding: 0 var(--spacing-md) 0 48px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-full);
-    font-size: var(--font-sm);
-    background: var(--color-bg-primary);
-    color: var(--color-text-primary);
-    transition: all 0.2s ease;
-}
-
-.search-input::placeholder {
-    color: var(--color-text-muted);
-}
-
-.search-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    gap: 24px;
 }
 
 .header-actions {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    gap: 16px;
+    margin-left: auto;
 }
 
+/* ----------------------------------
+   2. ACTION BUTTONS (Icons)
+   ---------------------------------- */
 .header-icon-btn {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    border: none;
-    background: var(--color-bg-primary);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.5);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-text-secondary);
-    transition: all 0.2s ease;
+    color: #64748b;
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    position: relative;
 }
 
 .header-icon-btn:hover {
-    background: rgba(67, 97, 238, 0.1);
+    background: #ffffff;
     color: var(--color-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .header-icon-btn svg {
@@ -105,128 +75,23 @@
     height: 22px;
 }
 
-.profile-dropdown {
-    position: relative;
-    margin-left: var(--spacing-sm);
-}
-
-.header-profile {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    cursor: pointer;
-    padding: 6px 12px 6px 6px;
-    border-radius: var(--radius-full);
-    background: var(--color-bg-primary);
-    transition: all 0.2s ease;
-    border: 1px solid var(--color-border);
-}
-
-.header-profile:hover {
-    border-color: var(--color-primary);
-    background: rgba(67, 97, 238, 0.05);
-}
-
-.profile-avatar {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid var(--color-bg-secondary);
-}
-
-.profile-name {
-    font-size: var(--font-sm);
-    font-weight: 500;
-    color: var(--color-text-primary);
-    max-width: 120px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.profile-arrow {
-    color: var(--color-text-muted);
-}
-
-.dropdown-menu {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    background: var(--color-bg-secondary);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-    min-width: 180px;
-    padding: var(--spacing-sm) 0;
-    z-index: 200;
-    border: 1px solid var(--color-border-light);
-    animation: dropdownFade 0.15s ease;
-}
-
-@keyframes dropdownFade {
-    from {
-        opacity: 0;
-        transform: translateY(-8px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    width: 100%;
-    padding: 12px var(--spacing-md);
-    text-align: left;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: var(--font-sm);
-    color: var(--color-text-primary);
-    text-decoration: none;
-    transition: background 0.15s ease;
-}
-
-.dropdown-item:hover {
-    background: var(--color-bg-primary);
-}
-
-.dropdown-item.danger {
-    color: var(--color-error);
-}
-
-.dropdown-item.danger:hover {
-    background: var(--color-error-light);
-}
-
-/* Notification Styles */
-.notification-wrapper {
-    position: relative;
-}
-
-.notification-btn {
-    position: relative;
-}
-
+/* Notification Badge (Pulse Animation) */
 .notification-badge {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: -2px;
+    right: -2px;
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
-    background: linear-gradient(135deg, #ef4444, #dc2626);
+    background: linear-gradient(135deg, #f43f5e, #e11d48);
     color: white;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     border-radius: 9px;
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 0 0 2px #fff;
     animation: badgePulse 2s infinite;
 }
 
@@ -242,19 +107,135 @@
     }
 }
 
+/* ----------------------------------
+   3. PROFILE PILL
+   ---------------------------------- */
+.profile-dropdown {
+    position: relative;
+    margin-left: 8px;
+}
+
+.header-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    padding: 6px 16px 6px 6px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.header-profile:hover {
+    background: #ffffff;
+    border-color: rgba(67, 97, 238, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px);
+}
+
+.profile-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.profile-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.profile-arrow {
+    color: #94a3b8;
+}
+
+/* ----------------------------------
+   4. DROPDOWNS (Glass Base)
+   ---------------------------------- */
+.dropdown-menu,
 .notification-dropdown {
     position: absolute;
-    top: calc(100% + 12px);
+    top: calc(100% + 16px);
     right: 0;
-    width: 360px;
-    max-height: 480px;
-    background: var(--color-bg-secondary);
-    border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    background: rgba(255, 255, 255, 0.98);
+    /* Less transparent for readability */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 20px;
+    box-shadow:
+        0 20px 40px -5px rgba(0, 0, 0, 0.1),
+        0 8px 16px -4px rgba(0, 0, 0, 0.05),
+        0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+    border: 1px solid rgba(226, 232, 240, 0.8);
     z-index: 200;
-    border: 1px solid var(--color-border-light);
-    animation: dropdownFade 0.2s ease;
+    animation: dropdownSlide 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
     overflow: hidden;
+}
+
+@keyframes dropdownSlide {
+    from {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Profile Menu Specifics */
+.dropdown-menu {
+    min-width: 220px;
+    padding: 8px;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 16px;
+    text-align: left;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #334155;
+    text-decoration: none;
+    border-radius: 12px;
+    transition: all 0.15s ease;
+}
+
+.dropdown-item:hover {
+    background: rgba(67, 97, 238, 0.08);
+    /* Brand tint */
+    color: var(--color-primary);
+    transform: translateX(4px);
+}
+
+.dropdown-item.danger:hover {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+/* ----------------------------------
+   5. NOTIFICATIONS (Detailed)
+   ---------------------------------- */
+.notification-dropdown {
+    width: 380px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .notification-header {
@@ -262,11 +243,12 @@
     justify-content: space-between;
     align-items: center;
     padding: 16px 20px;
-    border-bottom: 1px solid var(--color-border-light);
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+    background: rgba(248, 250, 252, 0.5);
 }
 
 .notification-header h4 {
-    font-size: 16px;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--color-text-primary);
     margin: 0;
@@ -276,8 +258,8 @@
     background: none;
     border: none;
     color: var(--color-primary);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 0.85rem;
+    font-weight: 600;
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 6px;
@@ -289,52 +271,40 @@
 }
 
 .notification-list {
-    max-height: 340px;
+    max-height: 380px;
     overflow-y: auto;
-}
-
-.notification-empty {
-    padding: 40px 20px;
-    text-align: center;
-    color: var(--color-text-muted);
-}
-
-.notification-empty .empty-icon {
-    font-size: 40px;
-    display: block;
-    margin-bottom: 12px;
-}
-
-.notification-empty p {
-    margin: 0;
-    font-size: 14px;
 }
 
 .notification-item {
     display: flex;
-    gap: 12px;
-    padding: 14px 20px;
+    gap: 14px;
+    padding: 16px 20px;
     cursor: pointer;
+    border-bottom: 1px solid rgba(241, 245, 249, 0.8);
     transition: background 0.2s;
-    border-bottom: 1px solid var(--color-border-light);
     position: relative;
 }
 
 .notification-item:hover {
-    background: var(--color-bg-primary);
+    background: rgba(248, 250, 252, 0.8);
 }
 
 .notification-item.unread {
-    background: rgba(67, 97, 238, 0.05);
+    background: rgba(239, 246, 255, 0.6);
+    /* Very light blue */
 }
 
 .notification-item.unread:hover {
-    background: rgba(67, 97, 238, 0.1);
+    background: rgba(239, 246, 255, 1);
 }
 
 .notification-icon {
-    font-size: 24px;
+    font-size: 20px;
+    /* Adjust if using emoji or icon font */
     flex-shrink: 0;
+    margin-top: 2px;
+    display: flex;
+    align-items: flex-start;
 }
 
 .notification-content {
@@ -343,19 +313,16 @@
 }
 
 .notification-content h5 {
-    font-size: 14px;
+    font-size: 0.9rem;
     font-weight: 600;
-    color: var(--color-text-primary);
+    color: #1e293b;
     margin: 0 0 4px 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .notification-content p {
-    font-size: 13px;
-    color: var(--color-text-secondary);
-    margin: 0 0 4px 0;
+    font-size: 0.85rem;
+    color: #64748b;
+    margin: 0 0 6px 0;
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -364,22 +331,14 @@
 }
 
 .notification-time {
-    font-size: 12px;
-    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    color: #94a3b8;
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-.msg-badge {
-    background: linear-gradient(135deg, #4361ee, #7c3aed);
-    color: white;
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: 500;
-}
-
+/* Unread Dot Indicator */
 .unread-dot {
     position: absolute;
     right: 20px;
@@ -394,15 +353,80 @@
 .notification-footer {
     display: block;
     text-align: center;
-    padding: 14px 20px;
-    font-size: 14px;
-    font-weight: 500;
+    padding: 14px;
+    font-size: 0.9rem;
+    font-weight: 600;
     color: var(--color-primary);
     text-decoration: none;
-    border-top: 1px solid var(--color-border-light);
+    background: rgba(248, 250, 252, 0.5);
+    border-top: 1px solid rgba(226, 232, 240, 0.8);
     transition: background 0.2s;
 }
 
 .notification-footer:hover {
-    background: var(--color-bg-primary);
+    background: rgba(241, 245, 249, 0.8);
+}
+
+.notification-empty {
+    padding: 60px 20px;
+    text-align: center;
+    color: #94a3b8;
+}
+
+/* ----------------------------------
+   6. MOBILE RESPONSIVENESS
+   ---------------------------------- */
+.mobile-menu-btn {
+    display: none;
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    padding: 10px;
+    border-radius: 12px;
+    margin-right: 12px;
+    transition: all 0.2s;
+}
+
+.mobile-menu-btn:hover {
+    background: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 768px) {
+    .header {
+        padding: 0 16px;
+        height: 64px;
+        left: 0 !important;
+        /* Force full width on mobile */
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(10px);
+    }
+
+    .mobile-menu-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Hide less important elements on mobile */
+    .profile-name {
+        display: none;
+    }
+
+    .header-profile {
+        padding: 4px;
+        background: transparent;
+        border: none;
+    }
+
+    .notification-dropdown {
+        position: fixed;
+        /* Fixed on mobile for better view */
+        top: 70px;
+        left: 16px;
+        right: 16px;
+        width: auto;
+        max-height: 80vh;
+    }
 }
