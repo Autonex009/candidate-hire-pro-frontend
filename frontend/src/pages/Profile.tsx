@@ -98,6 +98,11 @@ export default function Profile({ user }: ProfileProps) {
     const [error, setError] = useState<string | null>(null);
     const [dragActive, setDragActive] = useState(false);
 
+    // Computed values from profile data
+    const latestEducation = profile?.education?.[0] || null;
+    const latestExperience = profile?.work_experience?.[0] || null;
+    const hasWorkExperience = (profile?.work_experience?.length || 0) > 0;
+
     useEffect(() => {
         fetchProfile();
     }, []);
@@ -522,63 +527,71 @@ export default function Profile({ user }: ProfileProps) {
                         <h2 className="profile-name">{user?.name || 'User'}</h2>
                         <p className="profile-email">{user?.email || '-'}</p>
 
-                        {/* Role Badge - Fixed: Show role or Fresher */}
+                        {/* Role Badge - Show current role, latest job role, or Fresher */}
                         <span className="profile-role-badge">
-                            {profile?.current_role || (profile?.years_of_experience && profile.years_of_experience > 0
+                            {profile?.current_role || latestExperience?.role || (hasWorkExperience
                                 ? 'Professional'
                                 : 'Fresher')}
                         </span>
 
-                        {/* Fixed Template Info Tags - Always show structure */}
+                        {/* Fixed Template Info Tags - Data from resume parsing */}
                         <div className="profile-info-tags">
-                            {/* Education - Always show */}
+                            {/* Degree - From resume education OR user field */}
                             <span className="profile-info-tag">
                                 <span className="tag-icon">🎓</span>
-                                <span className="tag-text">{user?.degree || 'Not specified'}</span>
+                                <span className="tag-text">
+                                    {latestEducation?.degree || user?.degree || 'Not specified'}
+                                </span>
                             </span>
 
-                            {/* Branch - Always show */}
+                            {/* Branch/Field - From resume education OR user field */}
                             <span className="profile-info-tag">
                                 <span className="tag-icon">📚</span>
-                                <span className="tag-text">{user?.branch || 'Not specified'}</span>
+                                <span className="tag-text">
+                                    {latestEducation?.field_of_study || user?.branch || 'Not specified'}
+                                </span>
                             </span>
 
-                            {/* Batch - Always show */}
+                            {/* Batch - From resume education end_year OR user field */}
                             <span className="profile-info-tag">
                                 <span className="tag-icon">📅</span>
-                                <span className="tag-text">Batch {user?.batch || '-'}</span>
+                                <span className="tag-text">
+                                    Batch {latestEducation?.end_year || user?.batch || '-'}
+                                </span>
                             </span>
 
-                            {/* Company - Show if has experience, else show Fresher note */}
+                            {/* Company - From profile or latest experience */}
                             <span className="profile-info-tag">
                                 <span className="tag-icon">🏢</span>
                                 <span className="tag-text">
-                                    {profile?.current_company || (profile?.years_of_experience && profile.years_of_experience > 0
-                                        ? 'Not specified'
-                                        : 'Fresher - No company yet')}
+                                    {profile?.current_company || latestExperience?.company || (hasWorkExperience
+                                        ? 'Company not specified'
+                                        : 'Fresher')}
                                 </span>
                             </span>
 
-                            {/* Experience - Always show */}
-                            <span className="profile-info-tag">
-                                <span className="tag-icon">⏳</span>
-                                <span className="tag-text">
-                                    {profile?.years_of_experience && profile.years_of_experience > 0
-                                        ? `${profile.years_of_experience} years exp`
-                                        : 'Fresher'}
-                                </span>
-                            </span>
-
-                            {/* Data Annotation Interest - Show if answered */}
-                            {profile && profile.has_data_annotation_experience !== null && (
-                                <span className={`profile-info-tag ${profile?.has_data_annotation_experience ? 'highlight' : ''}`}>
-                                    <span className="tag-icon">🤖</span>
+                            {/* Experience Duration OR Data Annotation - Conditional display */}
+                            {hasWorkExperience ? (
+                                <span className="profile-info-tag">
+                                    <span className="tag-icon">⏳</span>
                                     <span className="tag-text">
-                                        {profile?.has_data_annotation_experience
-                                            ? 'Data Annotation Exp.'
-                                            : 'New to Data Annotation'}
+                                        {profile?.years_of_experience
+                                            ? `${profile.years_of_experience} years exp`
+                                            : `${profile?.work_experience?.length || 1} position(s)`}
                                     </span>
                                 </span>
+                            ) : (
+                                /* Data Annotation Interest - Only for freshers */
+                                profile?.has_data_annotation_experience !== null && profile?.has_data_annotation_experience !== undefined && (
+                                    <span className={`profile-info-tag ${profile.has_data_annotation_experience ? 'highlight' : ''}`}>
+                                        <span className="tag-icon">🤖</span>
+                                        <span className="tag-text">
+                                            {profile.has_data_annotation_experience
+                                                ? 'Data Annotation Exp.'
+                                                : 'New to Data Annotation'}
+                                        </span>
+                                    </span>
+                                )
                             )}
                         </div>
 

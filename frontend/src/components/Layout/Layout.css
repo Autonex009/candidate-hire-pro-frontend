@@ -18,14 +18,15 @@
     padding: 0;
 }
 
-/* Constrain main content */
+/* Constrain main content - scrolls under fixed header */
 .main-content {
     width: 100%;
     max-width: 100%;
-    padding: 100px 32px 40px 32px;
-    /* Top padding for fixed Header */
+    padding: 94px 32px 40px 32px;
+    /* Top padding for fixed Header (70px header + 24px gap) */
     box-sizing: border-box;
     overflow-x: visible;
+    min-height: calc(100vh - 94px);
 }
 
 /* Active Push */

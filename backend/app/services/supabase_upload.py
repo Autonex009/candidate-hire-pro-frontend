@@ -84,3 +84,66 @@ async def upload_to_supabase(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
+
+async def upload_bytes_to_supabase(
+    content: bytes,
+    bucket: str,
+    file_path: str,
+    content_type: str = "application/pdf"
+) -> str:
+    """
+    Upload raw bytes to Supabase Storage.
+    
+    Args:
+        content: Raw bytes to upload
+        bucket: Supabase storage bucket name
+        file_path: Path within the bucket (e.g., "resumes/user_123_resume.pdf")
+        content_type: MIME type of the file
+    
+    Returns:
+        Public URL of the uploaded file
+    
+    Raises:
+        Exception on upload failure
+    """
+    import os
+    import httpx
+    
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    
+    if not supabase_url or not supabase_key:
+        raise Exception("Supabase configuration missing")
+    
+    file_size = len(content)
+    
+    # Check file size limit (50MB for resumes)
+    if file_size > 50 * 1024 * 1024:
+        raise Exception("File too large (max 50MB)")
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{supabase_url}/storage/v1/object/{bucket}/{file_path}",
+                headers={
+                    "Authorization": f"Bearer {supabase_key}",
+                    "apikey": supabase_key,
+                    "Content-Type": content_type,
+                    "Content-Length": str(file_size),
+                    "x-upsert": "true",  # Overwrite if exists
+                },
+                content=content
+            )
+            
+            if response.status_code in [200, 201]:
+                public_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{file_path}"
+                return public_url
+            else:
+                error_detail = response.text[:500] if response.text else "Unknown error"
+                raise Exception(f"Supabase upload failed ({response.status_code}): {error_detail}")
+    except httpx.TimeoutException:
+        raise Exception("Upload timeout")
+    except Exception as e:
+        raise Exception(f"Upload failed: {str(e)}")
+
+

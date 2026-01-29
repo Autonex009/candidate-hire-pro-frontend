@@ -4,10 +4,10 @@ export interface User {
     email: string;
     name: string;
     registration_number: string;
-    degree: string;
-    branch: string;
-    batch: string;
-    college: string;
+    degree?: string;       // Optional - may not be set yet
+    branch?: string;       // Optional - may not be set yet
+    batch?: string;        // Optional - may not be set yet
+    college?: string;      // Optional - may not be set yet
     phone?: string;
     avatar_url?: string;
     role: 'student' | 'admin';

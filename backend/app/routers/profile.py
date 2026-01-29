@@ -128,9 +128,10 @@ async def upload_resume(
     """
     Upload resume - returns immediately, parses in background.
     
-    The endpoint validates the file and returns a job_id immediately.
-    Parsing happens asynchronously using asyncio.create_task.
-    Check status via GET /api/profile/resume-status/{job_id}
+    Scalable for 10K+ candidates:
+    - Returns immediately with job_id (or 0 if table doesn't exist)
+    - Parsing happens asynchronously using asyncio.create_task
+    - Check status via GET /api/profile/resume-status/{job_id}
     """
     # Validate file type
     if not file.filename.lower().endswith('.pdf'):
@@ -148,21 +149,30 @@ async def upload_resume(
             detail="File size must be less than 10MB"
         )
     
-    # Create parsing job record
-    job = ResumeParsingJob(
-        user_id=current_user.id,
-        resume_filename=file.filename,
-        status=ResumeParsingStatus.PENDING
-    )
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
+    # Try to create job record (graceful if table doesn't exist)
+    job_id = 0
+    job_tracking_enabled = False
+    try:
+        job = ResumeParsingJob(
+            user_id=current_user.id,
+            resume_filename=file.filename,
+            status=ResumeParsingStatus.PENDING
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.id
+        job_tracking_enabled = True
+        print(f"Created resume parsing job {job_id} for user {current_user.id}")
+    except Exception as e:
+        # Table might not exist - continue without job tracking
+        print(f"Job tracking disabled (table may not exist): {e}")
+        await db.rollback()
     
-    # Fire and forget - process in background
-    # This uses same event loop, no extra infrastructure needed
+    # Fire and forget - process in background (non-blocking)
     asyncio.create_task(
         process_resume_background(
-            job_id=job.id,
+            job_id=job_id if job_tracking_enabled else None,
             user_id=current_user.id,
             pdf_bytes=pdf_bytes,
             filename=file.filename
@@ -171,8 +181,8 @@ async def upload_resume(
     
     return {
         "status": "processing",
-        "job_id": job.id,
-        "message": "Resume uploaded successfully. Parsing in background."
+        "job_id": job_id,
+        "message": "Resume uploaded. Parsing in background - check status in a few seconds."
     }
 
 
@@ -212,7 +222,10 @@ async def get_latest_resume_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get the status of the user's most recent resume parsing job."""
+    """Get the status of the user's most recent resume parsing job.
+
+    Auto-detects stuck jobs (PROCESSING for > 5 minutes) and marks them as failed.
+    """
     result = await db.execute(
         select(ResumeParsingJob)
         .where(ResumeParsingJob.user_id == current_user.id)
@@ -220,15 +233,119 @@ async def get_latest_resume_status(
         .limit(1)
     )
     job = result.scalar_one_or_none()
-    
+
     if not job:
         return {"status": "none", "message": "No resume parsing jobs found"}
-    
+
+    # Auto-detect stuck jobs (PROCESSING for more than 5 minutes)
+    if job.status == ResumeParsingStatus.PROCESSING and job.started_at:
+        stuck_threshold = datetime.now(timezone.utc) - job.started_at
+        if stuck_threshold.total_seconds() > 300:  # 5 minutes
+            job.status = ResumeParsingStatus.FAILED
+            job.error_message = "Job timed out (stuck in processing). Please retry."
+            job.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+
     return {
         "job_id": job.id,
         "status": job.status.value,
         "error_message": job.error_message,
-        "retry_count": job.retry_count
+        "retry_count": job.retry_count,
+        "can_retry": job.status == ResumeParsingStatus.FAILED
+    }
+
+
+@router.post("/retry-resume")
+async def retry_resume_parsing(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retry a failed resume parsing job.
+
+    Only works if:
+    - User has a failed job
+    - Resume file is still available in storage
+    """
+    # Get the most recent failed job
+    result = await db.execute(
+        select(ResumeParsingJob)
+        .where(
+            ResumeParsingJob.user_id == current_user.id,
+            ResumeParsingJob.status == ResumeParsingStatus.FAILED
+        )
+        .order_by(ResumeParsingJob.created_at.desc())
+        .limit(1)
+    )
+    job = result.scalar_one_or_none()
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No failed resume job found to retry"
+        )
+
+    # Check retry limit
+    if job.retry_count >= 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum retry attempts (3) reached. Please upload a new resume."
+        )
+
+    # Get the resume from storage
+    from ..models import CandidateProfile
+    profile_result = await db.execute(
+        select(CandidateProfile).where(CandidateProfile.user_id == current_user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+
+    if not profile or not profile.resume_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No resume file found. Please upload a new resume."
+        )
+
+    # Fetch the resume from storage
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if profile.resume_url.startswith("/uploads/"):
+                # Local storage - can't fetch via HTTP in this context
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Resume stored locally. Please upload again."
+                )
+            response = await client.get(profile.resume_url)
+            response.raise_for_status()
+            pdf_bytes = response.content
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not fetch resume from storage: {str(e)}"
+        )
+
+    # Reset job status and increment retry count
+    job.status = ResumeParsingStatus.PENDING
+    job.error_message = None
+    job.started_at = None
+    job.completed_at = None
+    job.retry_count += 1
+    await db.commit()
+
+    # Fire background task
+    asyncio.create_task(
+        process_resume_background(
+            job_id=job.id,
+            user_id=current_user.id,
+            pdf_bytes=pdf_bytes,
+            filename=job.resume_filename or "resume.pdf"
+        )
+    )
+
+    return {
+        "status": "retrying",
+        "job_id": job.id,
+        "retry_count": job.retry_count,
+        "message": "Resume parsing retry started"
     }
 
 
@@ -237,7 +354,7 @@ async def get_latest_resume_status(
 # ============================================================================
 
 async def process_resume_background(
-    job_id: int,
+    job_id: Optional[int],
     user_id: int,
     pdf_bytes: bytes,
     filename: str
@@ -247,65 +364,143 @@ async def process_resume_background(
     
     This runs in the same event loop as the main app but doesn't block.
     Uses a fresh database session to avoid connection issues.
+    
+    Works with or without job tracking (job_id can be None).
     """
     from ..database import async_session_maker
     
     async with async_session_maker() as db:
         try:
-            # Mark job as processing
-            result = await db.execute(
-                select(ResumeParsingJob).where(ResumeParsingJob.id == job_id)
-            )
-            job = result.scalar_one_or_none()
-            if not job:
-                return
+            job = None
             
-            job.status = ResumeParsingStatus.PROCESSING
-            job.started_at = datetime.now(timezone.utc)
-            await db.commit()
+            # Try to mark job as processing (if job tracking is enabled)
+            if job_id:
+                try:
+                    result = await db.execute(
+                        select(ResumeParsingJob).where(ResumeParsingJob.id == job_id)
+                    )
+                    job = result.scalar_one_or_none()
+                    if job:
+                        job.status = ResumeParsingStatus.PROCESSING
+                        job.started_at = datetime.now(timezone.utc)
+                        await db.commit()
+                except Exception as e:
+                    print(f"Could not update job status: {e}")
+                    job = None
             
             # Parse resume with retries
             parsed, error = await parse_resume_safe(pdf_bytes, max_retries=3)
             
             if error or not parsed:
-                job.status = ResumeParsingStatus.FAILED
-                job.error_message = error or "Parsing returned no data"
-                job.completed_at = datetime.now(timezone.utc)
-                await db.commit()
-                print(f"Resume parsing failed for job {job_id}: {error}")
+                error_msg = error or "Parsing returned no data"
+                print(f"Resume parsing failed for user {user_id}: {error_msg}")
+                
+                # Mark job as failed if tracking is enabled
+                if job:
+                    try:
+                        job.status = ResumeParsingStatus.FAILED
+                        job.error_message = error_msg
+                        job.completed_at = datetime.now(timezone.utc)
+                        await db.commit()
+                    except Exception:
+                        pass
                 return
             
-            # Apply parsed data to profile
-            await apply_parsed_to_profile(db, user_id, parsed, filename)
-            
-            # Mark job as complete
-            job.status = ResumeParsingStatus.COMPLETED
-            job.completed_at = datetime.now(timezone.utc)
-            await db.commit()
-            
-            print(f"Resume parsing completed for job {job_id}")
-            
-        except Exception as e:
-            print(f"Background resume processing error for job {job_id}: {e}")
+            # Upload resume to Supabase storage with retry + local fallback
+            resume_url = None
             try:
-                result = await db.execute(
-                    select(ResumeParsingJob).where(ResumeParsingJob.id == job_id)
-                )
-                job = result.scalar_one_or_none()
-                if job:
-                    job.status = ResumeParsingStatus.FAILED
-                    job.error_message = str(e)[:500]  # Truncate long errors
+                from ..services.supabase_upload import upload_bytes_to_supabase
+                import uuid
+                import os
+                import aiofiles
+
+                # Generate unique filename: user_123_uuid_originalname.pdf
+                unique_id = str(uuid.uuid4())  # Full UUID for uniqueness
+                safe_filename = filename.replace(" ", "_").replace("/", "_").replace("\\", "_")
+                storage_path = f"resumes/user_{user_id}_{unique_id[:12]}_{safe_filename}"
+
+                # Try Supabase with 3 retries
+                upload_success = False
+                for attempt in range(3):
+                    try:
+                        resume_url = await upload_bytes_to_supabase(
+                            content=pdf_bytes,
+                            bucket="division-docs",
+                            file_path=storage_path,
+                            content_type="application/pdf"
+                        )
+                        print(f"Resume uploaded to Supabase (attempt {attempt + 1}): {resume_url}")
+                        upload_success = True
+                        break
+                    except Exception as upload_err:
+                        print(f"Supabase upload attempt {attempt + 1} failed: {upload_err}")
+                        if attempt < 2:
+                            await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+
+                # Fallback to local storage if Supabase failed
+                if not upload_success:
+                    print("Supabase failed after 3 attempts, falling back to local storage...")
+                    uploads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "resumes")
+                    os.makedirs(uploads_dir, exist_ok=True)
+
+                    local_filename = f"user_{user_id}_{unique_id[:12]}_{safe_filename}"
+                    local_path = os.path.join(uploads_dir, local_filename)
+
+                    async with aiofiles.open(local_path, 'wb') as f:
+                        await f.write(pdf_bytes)
+
+                    resume_url = f"/uploads/resumes/{local_filename}"
+                    print(f"Resume saved to local storage: {resume_url}")
+
+            except Exception as e:
+                print(f"CRITICAL: Failed to save resume to any storage: {e}")
+                # Last resort: save to temp location to prevent data loss
+                try:
+                    import tempfile
+                    temp_path = os.path.join(tempfile.gettempdir(), f"resume_backup_{user_id}_{filename}")
+                    with open(temp_path, 'wb') as f:
+                        f.write(pdf_bytes)
+                    print(f"Emergency backup saved to: {temp_path}")
+                except Exception:
+                    pass
+            
+            # Apply parsed data to profile (with resume_url)
+            await apply_parsed_to_profile(db, user_id, parsed, filename, resume_url)
+            
+            # Mark job as complete if tracking is enabled
+            if job:
+                try:
+                    job.status = ResumeParsingStatus.COMPLETED
                     job.completed_at = datetime.now(timezone.utc)
                     await db.commit()
-            except Exception:
-                pass  # Don't let error handling cause more errors
+                except Exception:
+                    pass
+            
+            print(f"Resume parsing completed for user {user_id}")
+            
+        except Exception as e:
+            print(f"Background resume processing error for user {user_id}: {e}")
+            if job_id:
+                try:
+                    result = await db.execute(
+                        select(ResumeParsingJob).where(ResumeParsingJob.id == job_id)
+                    )
+                    job = result.scalar_one_or_none()
+                    if job:
+                        job.status = ResumeParsingStatus.FAILED
+                        job.error_message = str(e)[:500]
+                        job.completed_at = datetime.now(timezone.utc)
+                        await db.commit()
+                except Exception:
+                    pass
 
 
 async def apply_parsed_to_profile(
     db: AsyncSession,
     user_id: int,
     parsed,
-    filename: str
+    filename: str,
+    resume_url: Optional[str] = None
 ):
     """Apply parsed resume data to user profile."""
     from ..services.resume_parser import deduplicate_skills
@@ -330,6 +525,7 @@ async def apply_parsed_to_profile(
     
     # Update profile fields
     profile.resume_filename = filename
+    profile.resume_url = resume_url  # Store the Supabase URL
     profile.resume_parsed_at = datetime.now(timezone.utc)
     profile.professional_summary = parsed.professional_summary
     profile.years_of_experience = parsed.years_of_experience

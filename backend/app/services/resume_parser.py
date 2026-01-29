@@ -1444,27 +1444,32 @@ def normalize_gemini_output(data: dict) -> dict:
 async def parse_resume_with_gemini(pdf_bytes: bytes) -> ParsedResume:
     """
     Parse resume PDF using Gemini vision model.
-    
+
     Args:
         pdf_bytes: Raw PDF file bytes
-    
+
     Returns:
         ParsedResume object with all extracted data
+
+    Note: Uses asyncio.to_thread for CPU-bound PDF conversion and
+          async Gemini API for true concurrent processing.
     """
-    # Convert PDF to images
-    images = pdf_to_images(pdf_bytes)
-    
+    import asyncio
+
+    # Convert PDF to images in thread pool (CPU-bound, don't block event loop)
+    images = await asyncio.to_thread(pdf_to_images, pdf_bytes)
+
     if not images:
         raise ValueError("Could not extract any pages from PDF")
-    
+
     # Prepare content parts for Gemini
     client = get_genai_client()
     if not client:
         raise ValueError("Gemini API not configured. Please set GEMINI_API_KEY.")
-    
+
     from google import genai
     contents = [RESUME_PARSER_PROMPT]
-    
+
     for img_bytes in images:
         # Add image as Part
         contents.append(
@@ -1473,9 +1478,9 @@ async def parse_resume_with_gemini(pdf_bytes: bytes) -> ParsedResume:
                 mime_type="image/png"
             )
         )
-    
-    # Generate response using new SDK
-    response = client.models.generate_content(
+
+    # Generate response using ASYNC API (non-blocking, allows concurrent parsing)
+    response = await client.aio.models.generate_content(
         model=settings.gemini_model,
         contents=contents,
         config=genai.types.GenerateContentConfig(

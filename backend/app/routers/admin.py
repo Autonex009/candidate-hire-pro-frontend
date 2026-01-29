@@ -31,8 +31,11 @@ router = APIRouter(prefix="/api/admin", tags=["Admin"])
 # ========== Helper to check admin role ==========
 async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Ensure the current user is an admin"""
-    # For demo, allow all authenticated users to access admin
-    # In production, check: if current_user.role != UserRole.ADMIN
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required"
+        )
     return current_user
 
 
