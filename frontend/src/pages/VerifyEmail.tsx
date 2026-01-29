@@ -82,6 +82,7 @@ export default function VerifyEmail() {
             if (response.ok) {
                 localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('token', data.access_token);
+                localStorage.setItem('user_email', email.toLowerCase().trim()); // For emergency submit fallback
                 navigate('/complete-profile');
             } else {
                 setError(data.detail || 'Invalid OTP');

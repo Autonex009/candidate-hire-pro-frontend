@@ -41,8 +41,22 @@ class Settings(BaseSettings):
     reset_token_expire_minutes: int = 60
     
     # AI/LLM Configuration
-    gemini_api_key: str = ""
+    # Multiple Gemini API keys for redundancy (comma-separated)
+    # If one key hits quota, system rotates to the next
+    gemini_api_key: str = ""  # Primary key (backwards compatible)
+    gemini_api_keys: str = ""  # Multiple keys: "key1,key2,key3"
     gemini_model: str = "gemini-2.0-flash"
+
+    def get_gemini_api_keys(self) -> list:
+        """Get all Gemini API keys as a list, with fallback to single key."""
+        keys = []
+        # First try the multi-key setting
+        if self.gemini_api_keys:
+            keys = [k.strip() for k in self.gemini_api_keys.split(",") if k.strip()]
+        # Fallback to single key if no multi-keys
+        if not keys and self.gemini_api_key:
+            keys = [self.gemini_api_key]
+        return keys
     
     # Vector Search (Pinecone)
     pinecone_api_key: str = ""

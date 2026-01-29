@@ -32,6 +32,7 @@ export default function Login({ onLogin }: LoginProps) {
         try {
             const response = await authApi.login({ username: email, password });
             localStorage.setItem('access_token', response.access_token);
+            localStorage.setItem('user_email', email.toLowerCase().trim()); // For emergency submit fallback
             onLogin();
             navigate('/dashboard');
         } catch (err) {

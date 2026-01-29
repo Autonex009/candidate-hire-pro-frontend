@@ -10,27 +10,25 @@ from ..config import get_settings
 
 settings = get_settings()
 
-# Lazy initialization of Gemini client
-_genai_client = None
 
 def get_genai_client():
-    """Get the Gemini client, initializing lazily if needed."""
-    global _genai_client
-    if _genai_client is None:
+    """
+    Get the Gemini client from the shared pool (supports multi-key rotation).
+    Reuses the same client pool as resume_parser for consistency.
+    """
+    try:
+        from .resume_parser import get_genai_client as get_shared_client
+        return get_shared_client()
+    except ImportError:
+        # Fallback if resume_parser not available
         try:
             from google import genai
-            if settings.gemini_api_key:
-                _genai_client = genai.Client(api_key=settings.gemini_api_key)
-            else:
-                print("WARNING: GEMINI_API_KEY not set - embeddings disabled")
-                return None
-        except ImportError:
-            print("WARNING: google-genai package not installed - embeddings disabled")
-            return None
-        except Exception as e:
-            print(f"WARNING: Failed to initialize Gemini client: {e}")
-            return None
-    return _genai_client
+            api_keys = settings.get_gemini_api_keys()
+            if api_keys:
+                return genai.Client(api_key=api_keys[0])
+        except Exception:
+            pass
+        return None
 
 
 class VectorSearchService:

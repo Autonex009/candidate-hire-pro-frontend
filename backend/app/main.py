@@ -48,9 +48,28 @@ app.include_router(tests_router)
 app.include_router(profile_router)
 app.include_router(notification_router)
 
-# Mount uploads directory for serving files
+# Setup uploads directory path
 uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 os.makedirs(uploads_dir, exist_ok=True)
+
+
+# Video fallback route - MUST be before StaticFiles mount to take precedence
+@app.get("/uploads/video_{video_id}.mp4")
+async def fallback_video(video_id: str):
+    """Fallback: redirect to Cloudinary if video not in local uploads"""
+    from fastapi.responses import RedirectResponse, FileResponse
+    
+    # Try local first
+    local_path = os.path.join(uploads_dir, f"video_{video_id}.mp4")
+    if os.path.exists(local_path):
+        return FileResponse(local_path, media_type="video/mp4")
+    
+    # Redirect to Cloudinary
+    cloudinary_url = f"https://res.cloudinary.com/{settings.cloudinary_cloud_name}/video/upload/hiring-pro/test-videos/video_{video_id}.mp4"
+    return RedirectResponse(url=cloudinary_url, status_code=302)
+
+
+# Mount uploads directory for other static files (comes after route so route takes precedence)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 

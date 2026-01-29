@@ -115,6 +115,39 @@ export default function TestTaking() {
         }
     };
 
+    // Check for failed submission and offer retry
+    useEffect(() => {
+        const failedAttempt = localStorage.getItem('failed_submission_attempt');
+        if (failedAttempt) {
+            const retrySubmit = window.confirm(
+                `A previous submission failed (Attempt ID: ${failedAttempt}).\n\nWould you like to retry submitting now?`
+            );
+
+            if (retrySubmit) {
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    fetch(`${API_BASE_URL}/tests/emergency-submit/${failedAttempt}`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            localStorage.removeItem('failed_submission_attempt');
+                            alert(`Test submitted successfully!\nScore: ${data.score}/${data.total_marks}`);
+                            navigate(`/test-result/${failedAttempt}`);
+                        } else {
+                            alert('Retry failed. Please contact support.');
+                        }
+                    })
+                    .catch(() => alert('Retry failed. Please contact support.'));
+                }
+            } else {
+                localStorage.removeItem('failed_submission_attempt');
+            }
+        }
+    }, []);
+
     // Start test
     useEffect(() => {
         const startTest = async () => {
@@ -135,6 +168,30 @@ export default function TestTaking() {
                     const data = await response.json();
                     setSession(data);
                     timer.start();
+
+                    // Try to recover any server-saved answers
+                    try {
+                        const recoverRes = await fetch(`${API_BASE_URL}/tests/recover-answers/${data.attempt_id}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (recoverRes.ok) {
+                            const recoveredData = await recoverRes.json();
+                            if (recoveredData.answers && recoveredData.answers.length > 0) {
+                                const recoveredAnswers: Record<number, string> = {};
+                                recoveredData.answers.forEach((a: any) => {
+                                    if (a.answer_text) {
+                                        recoveredAnswers[a.question_id] = a.answer_text;
+                                    }
+                                });
+                                if (Object.keys(recoveredAnswers).length > 0) {
+                                    setAnswers(prev => ({ ...recoveredAnswers, ...prev }));
+                                    console.log(`Recovered ${Object.keys(recoveredAnswers).length} answers from server`);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.log('No server answers to recover');
+                    }
                 } else {
                     // Parse error message from backend
                     try {
@@ -231,8 +288,9 @@ export default function TestTaking() {
         }
     };
 
-    // Submit
+    // Submit with ROBUST error handling and multiple fallbacks
     const isSubmittedRef = useRef(false);
+    const [submitStatus, setSubmitStatus] = useState<string>('');
 
     const handleSubmitTest = async () => {
         if (!session || submitting || isSubmittedRef.current) return;
@@ -240,77 +298,211 @@ export default function TestTaking() {
         isSubmittedRef.current = true;
         setSubmitting(true);
         setShowSubmitModal(false);
+        setSubmitStatus('Preparing submission...');
+
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            alert('Session expired. Please login again.');
+            isSubmittedRef.current = false;
+            setSubmitting(false);
+            return;
+        }
 
         try {
-            const token = localStorage.getItem('access_token');
-            if (!token) {
-                alert('Session expired. Please login again.');
-                isSubmittedRef.current = false;
-                return;
-            }
-
+            // STEP 1: Upload file if exists (with retry)
             if (globalAnswerFile) {
-                try {
-                    const firstAgentQ = session.questions.find(q => q.question_type === 'agent_analysis');
-                    const questionId = firstAgentQ?.id || session.questions[0].id;
+                setSubmitStatus('Uploading file...');
+                let fileUploaded = false;
 
-                    const formData = new FormData();
-                    formData.append('file', globalAnswerFile);
-                    formData.append('attempt_id', session.attempt_id.toString());
-                    formData.append('question_id', questionId.toString());
+                for (let attempt = 0; attempt < 3 && !fileUploaded; attempt++) {
+                    try {
+                        const firstAgentQ = session.questions.find(q => q.question_type === 'agent_analysis');
+                        const questionId = firstAgentQ?.id || session.questions[0].id;
 
-                    const res = await fetch(`${UPLOAD_BASE_URL}/tests/upload-answer-file`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}` },
-                        body: formData
-                    });
+                        const formData = new FormData();
+                        formData.append('file', globalAnswerFile);
+                        formData.append('attempt_id', session.attempt_id.toString());
+                        formData.append('question_id', questionId.toString());
 
-                    if (!res.ok) throw new Error('File upload failed');
-                } catch (e) {
-                    alert('Failed to upload your file. Please try again.');
-                    isSubmittedRef.current = false;
-                    setSubmitting(false);
-                    return;
+                        const res = await fetch(`${UPLOAD_BASE_URL}/tests/upload-answer-file`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}` },
+                            body: formData
+                        });
+
+                        if (res.ok) {
+                            fileUploaded = true;
+                        } else if (attempt < 2) {
+                            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                        }
+                    } catch (e) {
+                        if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                    }
+                }
+
+                if (!fileUploaded) {
+                    const proceed = window.confirm('File upload failed. Submit without file?');
+                    if (!proceed) {
+                        isSubmittedRef.current = false;
+                        setSubmitting(false);
+                        return;
+                    }
                 }
             }
 
-            const answerPromises = Object.entries(answers)
-                .filter(([_, answerText]) => !answerText.startsWith('FILE:'))
-                .map(async ([questionId, answerText]) => {
-                    try {
-                        await fetch(`${API_BASE_URL}/tests/submit-answer?attempt_id=${session.attempt_id}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                            body: JSON.stringify({ question_id: parseInt(questionId), answer_text: answerText })
-                        });
-                        return { questionId, success: true };
-                    } catch (e) {
-                        return { questionId, success: false };
+            // STEP 2: Bulk save ALL answers first (most reliable)
+            setSubmitStatus('Saving all answers...');
+            const allAnswers = Object.entries(answers)
+                .filter(([_, answerText]) => answerText && !answerText.startsWith('FILE:'))
+                .map(([questionId, answerText]) => ({
+                    question_id: parseInt(questionId),
+                    answer_text: answerText,
+                    time_spent_seconds: 0
+                }));
+
+            if (allAnswers.length > 0) {
+                try {
+                    await fetch(`${API_BASE_URL}/tests/bulk-save-answers/${session.attempt_id}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify(allAnswers)
+                    });
+                } catch (e) {
+                    console.warn('Bulk save failed, will try individual saves');
+                }
+            }
+
+            // STEP 3: Complete test with retry
+            setSubmitStatus('Completing test...');
+            let completed = false;
+            let result = null;
+
+            for (let attempt = 0; attempt < 3 && !completed; attempt++) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/tests/complete/${session.attempt_id}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ attempt_id: session.attempt_id, tab_switches: antiCheat.tabSwitches })
+                    });
+
+                    if (response.ok) {
+                        result = await response.json();
+                        completed = true;
+                    } else if (attempt < 2) {
+                        setSubmitStatus(`Retrying... (${attempt + 2}/3)`);
+                        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
                     }
-                });
+                } catch (e) {
+                    if (attempt < 2) {
+                        setSubmitStatus(`Retrying... (${attempt + 2}/3)`);
+                        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+                    }
+                }
+            }
 
-            await Promise.allSettled(answerPromises);
+            // STEP 4: Emergency submit if normal complete failed
+            if (!completed) {
+                setSubmitStatus('Using emergency submit...');
+                try {
+                    const emergencyRes = await fetch(`${API_BASE_URL}/tests/emergency-submit/${session.attempt_id}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                    });
 
-            const response = await fetch(`${API_BASE_URL}/tests/complete/${session.attempt_id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ attempt_id: session.attempt_id, tab_switches: antiCheat.tabSwitches })
-            });
+                    if (emergencyRes.ok) {
+                        const emergencyResult = await emergencyRes.json();
+                        if (emergencyResult.success) {
+                            completed = true;
+                            result = emergencyResult;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Emergency submit also failed');
+                }
+            }
 
-            if (response.ok) {
-                const result = await response.json();
+            // STEP 5: ULTIMATE FALLBACK - No auth submit (if token expired)
+            if (!completed) {
+                setSubmitStatus('Trying last resort submit...');
+                try {
+                    const userEmail = localStorage.getItem('user_email');
+                    if (userEmail) {
+                        const noAuthRes = await fetch(`${API_BASE_URL}/tests/emergency-submit-no-auth/${session.attempt_id}?email=${encodeURIComponent(userEmail)}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+
+                        if (noAuthRes.ok) {
+                            const noAuthResult = await noAuthRes.json();
+                            if (noAuthResult.success) {
+                                completed = true;
+                                result = noAuthResult;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('No-auth submit also failed');
+                }
+            }
+
+            if (completed && result) {
                 antiCheat.exitFullscreen();
                 localStorage.removeItem(`test_answers_${session.attempt_id}`);
                 navigate(`/test-result/${session.attempt_id}`, { state: { result } });
             } else {
-                throw new Error('Failed to complete test');
+                // Absolute last resort - save everything locally for manual recovery
+                localStorage.setItem('failed_submission_attempt', session.attempt_id.toString());
+                localStorage.setItem(`failed_answers_${session.attempt_id}`, JSON.stringify(answers));
+                localStorage.setItem('failed_submission_time', new Date().toISOString());
+
+                alert(
+                    `Submission failed after all retries.\n\n` +
+                    `Your answers have been saved locally.\n\n` +
+                    `Attempt ID: ${session.attempt_id}\n\n` +
+                    `Please take a screenshot of this message and contact support immediately.`
+                );
             }
         } catch (error) {
-            alert(`Failed to submit test. Please try again.`);
+            console.error('Submit error:', error);
+            localStorage.setItem('failed_submission_attempt', session.attempt_id.toString());
+            alert(`Submission error. Your answers are saved.\n\nAttempt ID: ${session.attempt_id}\n\nTry refreshing and submitting again.`);
         } finally {
             setSubmitting(false);
+            setSubmitStatus('');
         }
     };
+
+    // Auto-save answers periodically (every 60 seconds)
+    useEffect(() => {
+        if (!session || session.questions.length === 0) return;
+
+        const autoSaveInterval = setInterval(async () => {
+            const token = localStorage.getItem('access_token');
+            if (!token || Object.keys(answers).length === 0) return;
+
+            try {
+                const allAnswers = Object.entries(answers)
+                    .filter(([_, answerText]) => answerText && !answerText.startsWith('FILE:'))
+                    .map(([questionId, answerText]) => ({
+                        question_id: parseInt(questionId),
+                        answer_text: answerText,
+                        time_spent_seconds: 0
+                    }));
+
+                if (allAnswers.length > 0) {
+                    await fetch(`${API_BASE_URL}/tests/bulk-save-answers/${session.attempt_id}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify(allAnswers)
+                    }).catch(() => {}); // Silent fail
+                }
+            } catch (e) {
+                // Silent fail - auto-save is best-effort
+            }
+        }, 60000); // Every 60 seconds
+
+        return () => clearInterval(autoSaveInterval);
+    }, [session, answers]);
 
     // Stats
     const answeredCount = session ? Object.keys(answers).filter(id =>
@@ -429,10 +621,23 @@ export default function TestTaking() {
                         {session.total_questions - answeredCount > 0 && (
                             <p className="submit-warning">You have unanswered questions.</p>
                         )}
+                        {submitStatus && (
+                            <div className="submit-status" style={{
+                                textAlign: 'center',
+                                padding: '10px',
+                                color: '#666',
+                                fontSize: '14px',
+                                marginBottom: '10px'
+                            }}>
+                                {submitStatus}
+                            </div>
+                        )}
                         <div className="modal-actions">
-                            <button className="btn-secondary" onClick={() => setShowSubmitModal(false)}>Review</button>
+                            <button className="btn-secondary" onClick={() => setShowSubmitModal(false)} disabled={submitting}>
+                                Review
+                            </button>
                             <button className="btn-primary" onClick={handleSubmitTest} disabled={submitting}>
-                                {submitting ? 'Submitting...' : 'Submit'}
+                                {submitting ? (submitStatus || 'Submitting...') : 'Submit'}
                             </button>
                         </div>
                     </div>

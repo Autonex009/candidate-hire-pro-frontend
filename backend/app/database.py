@@ -15,13 +15,14 @@ if "postgresql" in settings.database_url:
     }
 
 engine = create_async_engine(
-    settings.database_url, 
+    settings.database_url,
     echo=settings.debug,
     connect_args=connect_args,
     pool_pre_ping=True,  # Verify connections before use
     pool_recycle=300,    # Recycle connections every 5 minutes
-    pool_size=20,        # Base pool size for concurrent connections
-    max_overflow=30,     # Allow up to 50 total connections per worker
+    pool_size=10,        # Reduced for memory efficiency
+    max_overflow=20,     # Allow up to 30 total connections per worker
+    pool_timeout=30,     # Wait max 30s for connection (fail fast)
 )
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -126,32 +126,110 @@ async def upload_resume(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Upload resume - returns immediately, parses in background.
-    
-    Scalable for 10K+ candidates:
-    - Returns immediately with job_id (or 0 if table doesn't exist)
-    - Parsing happens asynchronously using asyncio.create_task
-    - Check status via GET /api/profile/resume-status/{job_id}
+    Upload resume with GUARANTEED file save, then parse in background.
+
+    CRITICAL FLOW (ensures 100% resume save):
+    1. Validate file → FAIL FAST if invalid
+    2. Upload to storage (Supabase/local) → SYNCHRONOUS, must succeed
+    3. Save resume_url to profile → SYNCHRONOUS, must succeed
+    4. Create parsing job → THEN fire background parsing
+
+    This ensures: Even if parsing fails/crashes, the resume file is SAVED.
+    User can always retry parsing without re-uploading.
     """
-    # Validate file type
+    import re
+    import uuid
+    import os
+    import aiofiles
+
+    # ===== STEP 1: VALIDATE FILE =====
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only PDF files are supported"
         )
-    
-    # Read file
+
     pdf_bytes = await file.read()
-    
+
     if len(pdf_bytes) > 10 * 1024 * 1024:  # 10MB limit
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File size must be less than 10MB"
         )
-    
-    # Try to create job record (graceful if table doesn't exist)
+
+    # ===== STEP 2: UPLOAD FILE TO STORAGE (SYNCHRONOUS - MUST SUCCEED) =====
+    resume_url = None
+    unique_id = str(uuid.uuid4())
+
+    # Sanitize filename for storage
+    safe_filename = file.filename.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    safe_filename = re.sub(r'[\[\]\(\)\{\}<>\'\"#%&\+\=\|\^]', '', safe_filename)
+    safe_filename = re.sub(r'_+', '_', safe_filename)
+    storage_path = f"resumes/user_{current_user.id}_{unique_id[:12]}_{safe_filename}"
+
+    # Try Supabase first, then local fallback
+    try:
+        from ..services.supabase_upload import upload_bytes_to_supabase
+
+        for attempt in range(3):
+            try:
+                resume_url = await upload_bytes_to_supabase(
+                    content=pdf_bytes,
+                    bucket="division-docs",
+                    file_path=storage_path,
+                    content_type="application/pdf"
+                )
+                print(f"✅ Resume uploaded to Supabase: {resume_url}")
+                break
+            except Exception as upload_err:
+                print(f"Supabase attempt {attempt + 1}/3 failed: {upload_err}")
+                if attempt < 2:
+                    await asyncio.sleep(1 * (attempt + 1))
+    except Exception as e:
+        print(f"Supabase module error: {e}")
+
+    # Fallback to local storage if Supabase failed
+    if not resume_url:
+        print("⚠️ Supabase failed, using local storage...")
+        uploads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "resumes")
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        local_filename = f"user_{current_user.id}_{unique_id[:12]}_{safe_filename}"
+        local_filename = re.sub(r'[^\w\-_\.]', '', local_filename)
+        local_path = os.path.join(uploads_dir, local_filename)
+
+        async with aiofiles.open(local_path, 'wb') as f:
+            await f.write(pdf_bytes)
+
+        resume_url = f"/uploads/resumes/{local_filename}"
+        print(f"✅ Resume saved to local storage: {resume_url}")
+
+    if not resume_url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save resume file. Please try again."
+        )
+
+    # ===== STEP 3: SAVE RESUME URL TO PROFILE (SYNCHRONOUS - MUST SUCCEED) =====
+    profile = await get_profile_with_relations(db, current_user.id)
+
+    if not profile:
+        profile = CandidateProfile(user_id=current_user.id)
+        db.add(profile)
+        await db.flush()
+
+    # Save file reference IMMEDIATELY
+    profile.resume_filename = _safe_truncate(file.filename, 255)
+    profile.resume_url = _safe_truncate(resume_url, 500)
+    profile.resume_parsed_at = None  # Will be set after parsing completes
+
+    await db.commit()
+    print(f"✅ Resume URL saved to profile for user {current_user.id}")
+
+    # ===== STEP 4: CREATE PARSING JOB AND FIRE BACKGROUND TASK =====
     job_id = 0
     job_tracking_enabled = False
+
     try:
         job = ResumeParsingJob(
             user_id=current_user.id,
@@ -165,24 +243,26 @@ async def upload_resume(
         job_tracking_enabled = True
         print(f"Created resume parsing job {job_id} for user {current_user.id}")
     except Exception as e:
-        # Table might not exist - continue without job tracking
-        print(f"Job tracking disabled (table may not exist): {e}")
+        print(f"Job tracking disabled: {e}")
         await db.rollback()
-    
-    # Fire and forget - process in background (non-blocking)
+
+    # Fire background parsing (resume is ALREADY saved, this can fail safely)
     asyncio.create_task(
         process_resume_background(
             job_id=job_id if job_tracking_enabled else None,
             user_id=current_user.id,
             pdf_bytes=pdf_bytes,
-            filename=file.filename
+            filename=file.filename,
+            resume_url=resume_url  # Pass the already-saved URL
         )
     )
-    
+
     return {
         "status": "processing",
         "job_id": job_id,
-        "message": "Resume uploaded. Parsing in background - check status in a few seconds."
+        "resume_saved": True,  # Confirms file is 100% saved
+        "resume_url": resume_url,
+        "message": "Resume saved successfully. Parsing in background - check status in a few seconds."
     }
 
 
@@ -304,19 +384,39 @@ async def retry_resume_parsing(
             detail="No resume file found. Please upload a new resume."
         )
 
-    # Fetch the resume from storage
+    # Fetch the resume from storage (supports both local and remote)
     import httpx
+    import os
+    import aiofiles
+
+    pdf_bytes = None
+    resume_url = profile.resume_url
+
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            if profile.resume_url.startswith("/uploads/"):
-                # Local storage - can't fetch via HTTP in this context
+        if resume_url.startswith("/uploads/"):
+            # Local storage - read file directly
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            local_path = os.path.join(base_dir, resume_url.lstrip("/"))
+
+            if not os.path.exists(local_path):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Resume stored locally. Please upload again."
+                    detail="Resume file not found. Please upload again."
                 )
-            response = await client.get(profile.resume_url)
-            response.raise_for_status()
-            pdf_bytes = response.content
+
+            async with aiofiles.open(local_path, 'rb') as f:
+                pdf_bytes = await f.read()
+            print(f"Loaded resume from local storage: {local_path}")
+        else:
+            # Remote storage (Supabase) - fetch via HTTP
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(resume_url)
+                response.raise_for_status()
+                pdf_bytes = response.content
+            print(f"Loaded resume from remote storage: {resume_url}")
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -331,13 +431,14 @@ async def retry_resume_parsing(
     job.retry_count += 1
     await db.commit()
 
-    # Fire background task
+    # Fire background task with resume_url (file is already saved)
     asyncio.create_task(
         process_resume_background(
             job_id=job.id,
             user_id=current_user.id,
             pdf_bytes=pdf_bytes,
-            filename=job.resume_filename or "resume.pdf"
+            filename=job.resume_filename or "resume.pdf",
+            resume_url=resume_url
         )
     )
 
@@ -357,23 +458,24 @@ async def process_resume_background(
     job_id: Optional[int],
     user_id: int,
     pdf_bytes: bytes,
-    filename: str
+    filename: str,
+    resume_url: Optional[str] = None  # Already saved by upload endpoint
 ):
     """
-    Background task to parse resume and update profile.
-    
-    This runs in the same event loop as the main app but doesn't block.
-    Uses a fresh database session to avoid connection issues.
-    
-    Works with or without job tracking (job_id can be None).
+    Background task to PARSE resume and update profile.
+
+    IMPORTANT: The resume file is ALREADY SAVED before this runs.
+    This function only handles AI parsing - if it fails, the file is still safe.
+
+    The user can retry parsing without re-uploading the file.
     """
     from ..database import async_session_maker
-    
+
     async with async_session_maker() as db:
         try:
             job = None
-            
-            # Try to mark job as processing (if job tracking is enabled)
+
+            # Mark job as processing
             if job_id:
                 try:
                     result = await db.execute(
@@ -387,96 +489,30 @@ async def process_resume_background(
                 except Exception as e:
                     print(f"Could not update job status: {e}")
                     job = None
-            
-            # Parse resume with retries
+
+            # Parse resume with retries + API key rotation
             parsed, error = await parse_resume_safe(pdf_bytes, max_retries=3)
-            
+
             if error or not parsed:
                 error_msg = error or "Parsing returned no data"
                 print(f"Resume parsing failed for user {user_id}: {error_msg}")
-                
-                # Mark job as failed if tracking is enabled
+
+                # Mark job as failed (but resume file is STILL SAVED!)
                 if job:
                     try:
                         job.status = ResumeParsingStatus.FAILED
-                        job.error_message = error_msg
+                        job.error_message = error_msg[:500]
                         job.completed_at = datetime.now(timezone.utc)
                         await db.commit()
                     except Exception:
                         pass
                 return
-            
-            # Upload resume to Supabase storage with retry + local fallback
-            resume_url = None
-            try:
-                from ..services.supabase_upload import upload_bytes_to_supabase
-                import uuid
-                import os
-                import aiofiles
 
-                # Generate unique filename: user_123_uuid_originalname.pdf
-                unique_id = str(uuid.uuid4())  # Full UUID for uniqueness
-                # Sanitize filename - remove characters that Supabase doesn't allow
-                # Supabase rejects: [ ] ( ) { } and other special chars
-                import re
-                safe_filename = filename.replace(" ", "_").replace("/", "_").replace("\\", "_")
-                safe_filename = re.sub(r'[\[\]\(\)\{\}<>\'\"#%&\+\=\|\^]', '', safe_filename)
-                # Also collapse multiple underscores
-                safe_filename = re.sub(r'_+', '_', safe_filename)
-                storage_path = f"resumes/user_{user_id}_{unique_id[:12]}_{safe_filename}"
-
-                # Try Supabase with 3 retries
-                upload_success = False
-                for attempt in range(3):
-                    try:
-                        resume_url = await upload_bytes_to_supabase(
-                            content=pdf_bytes,
-                            bucket="division-docs",
-                            file_path=storage_path,
-                            content_type="application/pdf"
-                        )
-                        print(f"Resume uploaded to Supabase (attempt {attempt + 1}): {resume_url}")
-                        upload_success = True
-                        break
-                    except Exception as upload_err:
-                        print(f"Supabase upload attempt {attempt + 1} failed: {upload_err}")
-                        if attempt < 2:
-                            await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
-
-                # Fallback to local storage if Supabase failed
-                if not upload_success:
-                    print("Supabase failed after 3 attempts, falling back to local storage...")
-                    uploads_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "resumes")
-                    os.makedirs(uploads_dir, exist_ok=True)
-
-                    # Use the already-sanitized filename
-                    local_filename = f"user_{user_id}_{unique_id[:12]}_{safe_filename}"
-                    # Extra safety for local filesystem
-                    local_filename = re.sub(r'[^\w\-_\.]', '', local_filename)
-                    local_path = os.path.join(uploads_dir, local_filename)
-
-                    async with aiofiles.open(local_path, 'wb') as f:
-                        await f.write(pdf_bytes)
-
-                    resume_url = f"/uploads/resumes/{local_filename}"
-                    print(f"Resume saved to local storage: {resume_url}")
-
-            except Exception as e:
-                print(f"CRITICAL: Failed to save resume to any storage: {e}")
-                # Last resort: save to temp location to prevent data loss
-                try:
-                    import tempfile
-                    temp_path = os.path.join(tempfile.gettempdir(), f"resume_backup_{user_id}_{filename}")
-                    with open(temp_path, 'wb') as f:
-                        f.write(pdf_bytes)
-                    print(f"Emergency backup saved to: {temp_path}")
-                except Exception:
-                    pass
-            
-            # Apply parsed data to profile (with resume_url)
+            # Apply parsed data to profile
+            # resume_url is already saved, this just adds the parsed fields
             await apply_parsed_to_profile(db, user_id, parsed, filename, resume_url)
-            
-            # Mark job as complete if tracking is enabled
+
+            # Mark job as complete
             if job:
                 try:
                     job.status = ResumeParsingStatus.COMPLETED
@@ -484,11 +520,11 @@ async def process_resume_background(
                     await db.commit()
                 except Exception:
                     pass
-            
-            print(f"Resume parsing completed for user {user_id}")
-            
+
+            print(f"✅ Resume parsing completed for user {user_id}")
+
         except Exception as e:
-            print(f"Background resume processing error for user {user_id}: {e}")
+            print(f"Background parsing error for user {user_id}: {e}")
             if job_id:
                 try:
                     result = await db.execute(
@@ -544,9 +580,12 @@ async def apply_parsed_to_profile(
         profile.publications.clear()
         profile.awards.clear()
 
-    # CRITICAL: Save resume URL FIRST - this must succeed even if parsing fails
-    profile.resume_filename = _safe_truncate(filename, 255)
-    profile.resume_url = _safe_truncate(resume_url, 500)
+    # Update resume metadata (URL is already saved by upload endpoint, but update if provided)
+    if filename:
+        profile.resume_filename = _safe_truncate(filename, 255)
+    if resume_url:
+        profile.resume_url = _safe_truncate(resume_url, 500)
+    # Mark parsing as complete NOW (file was already saved earlier)
     profile.resume_parsed_at = datetime.now(timezone.utc)
 
     # Update profile fields with truncation
@@ -589,23 +628,16 @@ async def apply_parsed_to_profile(
         raise
 
     # Add education with defensive truncation
-    # CRITICAL: GPA column is VARCHAR(20) in DB - truncate to 20 chars!
+    # GPA column is now VARCHAR(100) after migration - can store "9.25 (3rd Rank in Class)" etc.
     for edu in parsed.education:
         try:
-            # Extract just the numeric GPA if it has extra text
-            gpa_raw = edu.gpa or ""
-            # Try to extract just the number part (e.g., "9.25" from "9.25 (3rd Rank)")
-            import re
-            gpa_match = re.match(r'^[\d.]+', gpa_raw.strip())
-            gpa_value = gpa_match.group(0) if gpa_match else gpa_raw[:20]
-
             profile.education.append(Education(
                 school=_safe_truncate(edu.school, 300),
                 degree=_safe_truncate(edu.degree, 200),
                 field_of_study=_safe_truncate(edu.field_of_study, 200),
                 start_year=edu.start_year,
                 end_year=edu.end_year,
-                gpa=_safe_truncate(gpa_value, 20)  # VARCHAR(20) in current DB!
+                gpa=_safe_truncate(edu.gpa, 100)  # VARCHAR(100) after migration
             ))
         except Exception as e:
             print(f"Failed to add education entry: {e}")

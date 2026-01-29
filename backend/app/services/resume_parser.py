@@ -13,27 +13,95 @@ from ..config import get_settings
 
 settings = get_settings()
 
-# Lazy initialization of Gemini client
-_genai_client = None
+# ============================================================================
+# Multi-API Key Rotation for Gemini (handles quota limits)
+# ============================================================================
 
-def get_genai_client():
-    """Get the Gemini client, initializing lazily if needed."""
-    global _genai_client
-    if _genai_client is None:
+class GeminiClientPool:
+    """
+    Pool of Gemini clients with automatic rotation on quota errors.
+    Ensures resume parsing succeeds even if one API key hits its limit.
+    """
+    def __init__(self):
+        self._clients = []
+        self._current_index = 0
+        self._initialized = False
+        self._failed_keys = set()  # Track keys that hit quota
+
+    def _initialize(self):
+        """Initialize all Gemini clients from available API keys."""
+        if self._initialized:
+            return
+
+        api_keys = settings.get_gemini_api_keys()
+        if not api_keys:
+            print("WARNING: No GEMINI_API_KEY(s) set - resume parsing disabled")
+            self._initialized = True
+            return
+
         try:
             from google import genai
-            if settings.gemini_api_key:
-                _genai_client = genai.Client(api_key=settings.gemini_api_key)
-            else:
-                print("WARNING: GEMINI_API_KEY not set - resume parsing disabled")
-                return None
+            for i, key in enumerate(api_keys):
+                try:
+                    client = genai.Client(api_key=key)
+                    self._clients.append({"client": client, "key_index": i})
+                    print(f"✅ Gemini client {i+1}/{len(api_keys)} initialized")
+                except Exception as e:
+                    print(f"WARNING: Failed to init Gemini client {i+1}: {e}")
         except ImportError:
-            print("WARNING: google-genai package not installed - resume parsing disabled")
+            print("WARNING: google-genai package not installed")
+
+        self._initialized = True
+        print(f"Gemini client pool: {len(self._clients)} clients available")
+
+    def get_client(self):
+        """Get the current Gemini client."""
+        self._initialize()
+        if not self._clients:
             return None
-        except Exception as e:
-            print(f"WARNING: Failed to initialize Gemini client: {e}")
-            return None
-    return _genai_client
+        return self._clients[self._current_index]["client"]
+
+    def rotate_on_quota_error(self) -> bool:
+        """
+        Rotate to next client when current hits quota.
+        Returns True if rotation successful, False if all keys exhausted.
+        """
+        if len(self._clients) <= 1:
+            return False
+
+        self._failed_keys.add(self._current_index)
+
+        # Find next working key
+        for _ in range(len(self._clients)):
+            self._current_index = (self._current_index + 1) % len(self._clients)
+            if self._current_index not in self._failed_keys:
+                print(f"🔄 Rotated to Gemini API key {self._current_index + 1}")
+                return True
+
+        print("⚠️ All Gemini API keys exhausted")
+        return False
+
+    def reset_failed_keys(self):
+        """Reset failed keys (call periodically or on new day)."""
+        self._failed_keys.clear()
+
+    @property
+    def available_clients_count(self) -> int:
+        """Number of clients that haven't failed."""
+        self._initialize()
+        return len(self._clients) - len(self._failed_keys)
+
+
+# Global client pool
+_gemini_pool = GeminiClientPool()
+
+def get_genai_client():
+    """Get the current Gemini client from the pool."""
+    return _gemini_pool.get_client()
+
+def rotate_gemini_client() -> bool:
+    """Rotate to next Gemini client on quota error."""
+    return _gemini_pool.rotate_on_quota_error()
 
 
 # ============================================================================
@@ -1646,44 +1714,70 @@ def repair_truncated_json(raw_response: str) -> dict | None:
 
 async def parse_resume_safe(pdf_bytes: bytes, max_retries: int = 3) -> tuple[ParsedResume | None, str | None]:
     """
-    Parse resume with robust error handling and retries.
-    
+    Parse resume with robust error handling, retries, and API key rotation.
+
+    Features:
+    - Retries on transient failures with exponential backoff
+    - Automatically rotates to backup API key on quota errors (429)
+    - Ensures parsing succeeds if ANY configured API key has quota
+
     Args:
         pdf_bytes: PDF file content
-        max_retries: Number of retry attempts
-        
+        max_retries: Number of retry attempts per API key
+
     Returns:
         Tuple of (ParsedResume or None, error_message or None)
     """
     import asyncio
-    
+
     last_error = None
-    
-    for attempt in range(max_retries):
+    total_attempts = 0
+    max_total_attempts = max_retries * max(_gemini_pool.available_clients_count, 1)
+
+    while total_attempts < max_total_attempts:
+        attempt_in_key = total_attempts % max_retries
+        total_attempts += 1
+
         try:
             result = await parse_resume_with_gemini(pdf_bytes)
             # Check if we got meaningful data
             if result.professional_summary or result.work_experience or result.education:
                 return (result, None)
             # Empty result - might be parsing issue, retry
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+            if total_attempts < max_total_attempts:
+                await asyncio.sleep(2 ** attempt_in_key)  # Exponential backoff
                 continue
             return (result, None)  # Return empty result on last attempt
-            
+
         except json.JSONDecodeError as e:
             last_error = f"JSON parse error: {str(e)}"
-            print(f"Attempt {attempt + 1}/{max_retries}: {last_error}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)
+            print(f"Attempt {total_attempts}/{max_total_attempts}: {last_error}")
+            if total_attempts < max_total_attempts:
+                await asyncio.sleep(2 ** attempt_in_key)
                 continue
-                
+
         except Exception as e:
-            last_error = f"Parsing error: {str(e)}"
-            print(f"Attempt {attempt + 1}/{max_retries}: {last_error}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)
+            error_str = str(e)
+            last_error = f"Parsing error: {error_str}"
+            print(f"Attempt {total_attempts}/{max_total_attempts}: {last_error}")
+
+            # Check if it's a quota error - try rotating to another API key
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
+                print(f"🔴 Quota exceeded on current API key")
+                if rotate_gemini_client():
+                    print(f"🟢 Switched to backup API key, retrying...")
+                    # Don't count this as a failed attempt - we have a fresh key
+                    total_attempts -= 1
+                    await asyncio.sleep(1)  # Brief pause before retry
+                    continue
+                else:
+                    # All keys exhausted
+                    last_error = "All Gemini API keys have hit quota limits. Please try again later or add more API keys."
+                    break
+
+            if total_attempts < max_total_attempts:
+                await asyncio.sleep(2 ** attempt_in_key)
                 continue
-    
+
     return (None, last_error)
 
