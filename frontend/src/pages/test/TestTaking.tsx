@@ -372,20 +372,17 @@ export default function TestTaking() {
         });
     };
 
-    // Auto-save
+    // Auto-save to localStorage (use refs to avoid interval recreation)
+    const flaggedQuestionsRef = useRef(flaggedQuestions);
+    flaggedQuestionsRef.current = flaggedQuestions;
+    const currentQuestionIndexRef = useRef(currentQuestionIndex);
+    currentQuestionIndexRef.current = currentQuestionIndex;
+
     useEffect(() => {
         if (!session) return;
         const saveKey = `test_answers_${session.attempt_id}`;
 
-        const localSaveInterval = setInterval(() => {
-            localStorage.setItem(saveKey, JSON.stringify({
-                answers,
-                flaggedQuestions: Array.from(flaggedQuestions),
-                savedAt: new Date().toISOString(),
-                questionIndex: currentQuestionIndex
-            }));
-        }, 5000);
-
+        // Restore saved data on mount
         const saved = localStorage.getItem(saveKey);
         if (saved) {
             try {
@@ -399,17 +396,27 @@ export default function TestTaking() {
             } catch (e) { /* ignore */ }
         }
 
-        return () => clearInterval(localSaveInterval);
-    }, [session, answers, currentQuestionIndex, flaggedQuestions]);
+        const localSaveInterval = setInterval(() => {
+            localStorage.setItem(saveKey, JSON.stringify({
+                answers: answersRef.current,
+                flaggedQuestions: Array.from(flaggedQuestionsRef.current),
+                savedAt: new Date().toISOString(),
+                questionIndex: currentQuestionIndexRef.current
+            }));
+        }, 5000);
 
-    // Backend sync
+        return () => clearInterval(localSaveInterval);
+    }, [session]);  // Only depend on session - use refs for everything else
+
+    // Backend sync (use ref to avoid interval recreation)
     useEffect(() => {
         if (!session) return;
         const token = localStorage.getItem('access_token');
         if (!token) return;
 
         const syncToBackend = async () => {
-            for (const [questionId, answerText] of Object.entries(answers)) {
+            const currentAnswers = answersRef.current;
+            for (const [questionId, answerText] of Object.entries(currentAnswers)) {
                 try {
                     if (answerText.startsWith('FILE:')) continue;
                     await fetch(`${API_BASE_URL}/tests/submit-answer?attempt_id=${session.attempt_id}`, {
@@ -423,7 +430,7 @@ export default function TestTaking() {
 
         const syncInterval = setInterval(syncToBackend, 30000);
         return () => clearInterval(syncInterval);
-    }, [session, answers]);
+    }, [session]);  // Only depend on session - use answersRef for answers
 
     const goToQuestion = (index: number) => {
         if (index >= 0 && index < (session?.questions.length || 0)) {
@@ -685,16 +692,17 @@ export default function TestTaking() {
         }
     };
 
-    // Auto-save answers periodically (every 60 seconds)
+    // Auto-save answers periodically (every 60 seconds) - use ref to avoid interval recreation
     useEffect(() => {
         if (!session || session.questions.length === 0) return;
 
         const autoSaveInterval = setInterval(async () => {
             const token = localStorage.getItem('access_token');
-            if (!token || Object.keys(answers).length === 0) return;
+            const currentAnswers = answersRef.current;
+            if (!token || Object.keys(currentAnswers).length === 0) return;
 
             try {
-                const allAnswers = Object.entries(answers)
+                const allAnswers = Object.entries(currentAnswers)
                     .filter(([_, answerText]) => answerText && !answerText.startsWith('FILE:'))
                     .map(([questionId, answerText]) => ({
                         question_id: parseInt(questionId),
@@ -715,7 +723,7 @@ export default function TestTaking() {
         }, 60000); // Every 60 seconds
 
         return () => clearInterval(autoSaveInterval);
-    }, [session, answers]);
+    }, [session]);  // Only depend on session - use answersRef for answers
 
     // Stats
     const answeredCount = session ? Object.keys(answers).filter(id =>
