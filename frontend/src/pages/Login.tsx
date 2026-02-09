@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
 import { authApi, API_BASE_URL } from '../services/api';
@@ -17,6 +17,9 @@ export default function Login({ onLogin }: LoginProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const navigate = useNavigate();
+
+    // Detect mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
     const handleEmailSubmit = (e: FormEvent) => {
         e.preventDefault();
@@ -52,7 +55,7 @@ export default function Login({ onLogin }: LoginProps) {
     };
 
     // Google Sign-In Handler
-    const handleGoogleAuth = async (accessToken: string) => {
+    const handleGoogleAuth = useCallback(async (accessToken: string) => {
         setLoading(true);
         setError('');
 
@@ -107,12 +110,69 @@ export default function Login({ onLogin }: LoginProps) {
         } finally {
             setLoading(false);
         }
+    }, [onLogin, navigate]);
+
+    // Handle OAuth implicit grant from URL hash (for redirect flow)
+    useEffect(() => {
+        const hash = window.location.hash;
+        if (hash && hash.includes('access_token')) {
+            const params = new URLSearchParams(hash.substring(1));
+            const accessToken = params.get('access_token');
+            if (accessToken) {
+                // Clear hash from URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                // Process the token
+                handleGoogleAuth(accessToken);
+            }
+        }
+    }, [handleGoogleAuth]);
+
+    // Google Login - Use popup on desktop, redirect on mobile for better compatibility
+    const googleLogin = useGoogleLogin({
+        onSuccess: (tokenResponse) => {
+            if ('access_token' in tokenResponse) {
+                handleGoogleAuth(tokenResponse.access_token);
+            }
+        },
+        onError: (error) => {
+            console.error('Google login error:', error);
+            // Provide more helpful error message for mobile users
+            if (isMobile) {
+                setError('Google sign-in failed. If popups are blocked, please allow popups for this site or try on desktop.');
+            } else {
+                setError('Google sign-in failed. Please try again.');
+            }
+        },
+        // Popup with better mobile handling
+        flow: 'implicit',
+        ux_mode: 'popup',
+        // Force account selection - helps avoid cached state issues on mobile
+        prompt: 'select_account',
+    });
+
+    // Fallback: Direct Google OAuth URL for mobile (if popup keeps failing)
+    const handleMobileGoogleLogin = () => {
+        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+        const redirectUri = encodeURIComponent(window.location.origin + '/login');
+        const scope = encodeURIComponent('openid email profile');
+        const responseType = 'token';
+
+        // Redirect to Google OAuth with implicit grant
+        const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=${responseType}&scope=${scope}&prompt=select_account`;
+
+        window.location.href = googleAuthUrl;
     };
 
-    const googleLogin = useGoogleLogin({
-        onSuccess: (tokenResponse) => handleGoogleAuth(tokenResponse.access_token),
-        onError: () => setError('Google sign-in failed'),
-    });
+    // Click handler - tries popup first, falls back to redirect on mobile
+    const handleGoogleButtonClick = () => {
+        if (isMobile) {
+            // On mobile, use redirect flow directly for better reliability
+            handleMobileGoogleLogin();
+        } else {
+            // On desktop, use popup
+            googleLogin();
+        }
+    };
 
     return (
         <div className="login-page">
@@ -185,7 +245,7 @@ export default function Login({ onLogin }: LoginProps) {
                             <button
                                 type="button"
                                 className="login-btn google-btn"
-                                onClick={() => googleLogin()}
+                                onClick={handleGoogleButtonClick}
                                 disabled={loading}
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24">
@@ -267,7 +327,7 @@ export default function Login({ onLogin }: LoginProps) {
                             <button
                                 type="button"
                                 className="login-btn google-btn"
-                                onClick={() => googleLogin()}
+                                onClick={handleGoogleButtonClick}
                                 disabled={loading}
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24">
