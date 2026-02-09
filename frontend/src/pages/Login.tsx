@@ -144,9 +144,14 @@ export default function Login({ onLogin }: LoginProps) {
     // Fallback: Direct Google OAuth URL for mobile (if popup keeps failing)
     const handleMobileGoogleLogin = () => {
         const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        const redirectUri = encodeURIComponent(window.location.origin + '/login');
+        const rawRedirectUri = window.location.origin + '/login';
+        const redirectUri = encodeURIComponent(rawRedirectUri);
         const scope = encodeURIComponent('openid email profile');
         const responseType = 'token';
+
+        // Debug: show the redirect URI being used
+        console.log('Redirect URI:', rawRedirectUri);
+        alert('Redirect URI: ' + rawRedirectUri);
 
         // Redirect to Google OAuth with implicit grant
         const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=${responseType}&scope=${scope}&prompt=select_account`;
