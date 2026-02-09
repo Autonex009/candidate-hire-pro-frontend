@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { authApi } from './services/api';
+import { authApi, API_BASE_URL } from './services/api';
 import type { User } from './types';
 
 // Candidate Components
@@ -46,9 +46,64 @@ function App() {
     const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
     const [profileComplete, setProfileComplete] = useState(false);
 
-    useEffect(() => {
-        checkAuth();
+    // Handle Google OAuth redirect with access_token in hash (for mobile)
+    const handleGoogleOAuthRedirect = useCallback(async (accessToken: string) => {
+        try {
+            // Get user info from Google
+            const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+
+            if (!userInfoResponse.ok) {
+                console.error('Failed to get user info from Google');
+                return;
+            }
+
+            const userInfo = await userInfoResponse.json();
+
+            // Send to backend
+            const response = await fetch(`${API_BASE_URL}/auth/google`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id_token: accessToken,
+                    email: userInfo.email,
+                    name: userInfo.name,
+                    picture: userInfo.picture
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                localStorage.setItem('access_token', data.access_token);
+                if (data.user?.email) {
+                    localStorage.setItem('user_email', data.user.email.toLowerCase());
+                }
+                // Refresh auth state
+                window.location.href = data.next_step === 'upload_resume' ? '/complete-profile' : '/dashboard';
+            }
+        } catch (err) {
+            console.error('Google OAuth redirect error:', err);
+        }
     }, []);
+
+    // Check for OAuth hash on mount (Google redirect)
+    useEffect(() => {
+        const hash = window.location.hash;
+        if (hash && hash.includes('access_token')) {
+            const params = new URLSearchParams(hash.substring(1));
+            const accessToken = params.get('access_token');
+            if (accessToken) {
+                // Clear hash from URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                // Process the token
+                handleGoogleOAuthRedirect(accessToken);
+                return; // Don't run checkAuth yet
+            }
+        }
+        checkAuth();
+    }, [handleGoogleOAuthRedirect]);
 
     const checkAuth = async () => {
         const token = localStorage.getItem('access_token');

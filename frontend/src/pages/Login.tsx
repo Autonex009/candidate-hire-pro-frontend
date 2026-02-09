@@ -144,8 +144,8 @@ export default function Login({ onLogin }: LoginProps) {
     // Fallback: Direct Google OAuth URL for mobile (if popup keeps failing)
     const handleMobileGoogleLogin = () => {
         const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        // Use exact redirect URI (no trailing slash to match Google Console config)
-        const rawRedirectUri = 'https://jobs.autonexaidata.com/login';
+        // Use root URL to avoid trailing slash redirect issues
+        const rawRedirectUri = 'https://jobs.autonexaidata.com';
         const redirectUri = encodeURIComponent(rawRedirectUri);
         const scope = encodeURIComponent('openid email profile');
         const responseType = 'token';
