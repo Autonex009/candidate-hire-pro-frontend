@@ -635,4 +635,14 @@ export const messagesApi = {
     },
 };
 
+// Leaderboard API
+export const leaderboardApi = {
+    getLeaderboard: async (assessmentId?: number, limit = 50) => {
+        const params: { assessment_id?: number; limit: number } = { limit };
+        if (assessmentId) params.assessment_id = assessmentId;
+        const response = await api.get('/standalone-assessments/leaderboard', { params });
+        return response.data;
+    },
+};
+
 export default api;
