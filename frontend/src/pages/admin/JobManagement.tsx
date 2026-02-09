@@ -53,7 +53,6 @@ export default function JobManagement() {
     const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
     const [selectedTestId, setSelectedTestId] = useState<number | null>(null);
     const [jdFile, setJdFile] = useState<File | null>(null);
-    const [_uploadingJd, _setUploadingJd] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch data on mount
@@ -141,20 +140,6 @@ export default function JobManagement() {
         setSelectedTestId(null);
         setEditingJob(null);
         setJdFile(null);
-    };
-
-    const _handleJdUpload = async (jobId: number) => {
-        if (!jdFile) return;
-        try {
-            _setUploadingJd(true);
-            await adminApiService.uploadJobJD(jobId, jdFile);
-            setJdFile(null);
-            fetchJobs();
-        } catch (error: any) {
-            alert(error.response?.data?.detail || 'Failed to upload JD');
-        } finally {
-            _setUploadingJd(false);
-        }
     };
 
     const handleEditJob = (job: Job) => {
