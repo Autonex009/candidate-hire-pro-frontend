@@ -551,3 +551,65 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* JD PDF Upload Section */
+.jd-upload-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.existing-jd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: #ecfdf5;
+    border-radius: 8px;
+    color: #059669;
+    font-size: 13px;
+}
+
+.existing-jd a {
+    color: #059669;
+    text-decoration: underline;
+    font-weight: 500;
+}
+
+.btn-upload-jd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 18px;
+    background: #f1f5f9;
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    color: #475569;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-upload-jd:hover {
+    border-color: #1E40AF;
+    background: #eef2ff;
+    color: #1E40AF;
+}
+
+.btn-clear-jd {
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    color: #64748b;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.btn-clear-jd:hover {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #dc2626;
+}

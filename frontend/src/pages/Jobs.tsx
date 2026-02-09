@@ -12,6 +12,9 @@ export default function Jobs() {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [stats, setStats] = useState<JobStats | null>(null);
     const [loading, setLoading] = useState(true);
+    const [selectedJob, setSelectedJob] = useState<any>(null);
+    const [showJobDetails, setShowJobDetails] = useState(false);
+    const [loadingDetails, setLoadingDetails] = useState(false);
 
     useEffect(() => {
         loadJobs();
@@ -79,6 +82,25 @@ export default function Jobs() {
             case 'super_dream': return 'Super Dream';
             default: return 'Regular';
         }
+    };
+
+    const handleViewDetails = async (jobId: number) => {
+        setLoadingDetails(true);
+        setShowJobDetails(true);
+        try {
+            const details = await jobsApi.getJobDetails(jobId);
+            setSelectedJob(details);
+        } catch (error) {
+            console.error('Failed to load job details:', error);
+            setSelectedJob(null);
+        } finally {
+            setLoadingDetails(false);
+        }
+    };
+
+    const closeJobDetails = () => {
+        setShowJobDetails(false);
+        setSelectedJob(null);
     };
 
     return (
@@ -177,6 +199,12 @@ export default function Jobs() {
                                                 Apply Now
                                             </button>
                                         )}
+                                        <button
+                                            className="btn-view-details"
+                                            onClick={() => handleViewDetails(job.id)}
+                                        >
+                                            View Details
+                                        </button>
                                     </div>
                                 </div>
                             ))}
@@ -230,6 +258,93 @@ export default function Jobs() {
                     </div>
                 </div>
             </div>
+
+            {/* Job Details Modal */}
+            {showJobDetails && (
+                <div className="modal-overlay" onClick={closeJobDetails}>
+                    <div className="job-details-modal" onClick={e => e.stopPropagation()}>
+                        <button className="modal-close" onClick={closeJobDetails}>✕</button>
+
+                        {loadingDetails ? (
+                            <div className="modal-loading">Loading job details...</div>
+                        ) : selectedJob ? (
+                            <>
+                                <div className="modal-header">
+                                    <div className="company-logo-large">
+                                        {selectedJob.company_name?.charAt(0) || 'C'}
+                                    </div>
+                                    <div className="modal-title-section">
+                                        <h2>{selectedJob.role}</h2>
+                                        <p className="company-name">{selectedJob.company_name}</p>
+                                    </div>
+                                </div>
+
+                                <div className="modal-meta">
+                                    <span className="meta-item">📍 {selectedJob.location || 'Remote'}</span>
+                                    <span className="meta-item">💼 {selectedJob.job_type}</span>
+                                    <span className="meta-item">💰 ₹{selectedJob.ctc} LPA</span>
+                                    <span className={`offer-badge ${getOfferTypeClass(selectedJob.offer_type)}`}>
+                                        {formatOfferType(selectedJob.offer_type)}
+                                    </span>
+                                </div>
+
+                                {selectedJob.description && (
+                                    <div className="modal-section">
+                                        <h3>Job Description</h3>
+                                        <p className="job-description-text">{selectedJob.description}</p>
+                                    </div>
+                                )}
+
+                                {selectedJob.jd_pdf_url && (
+                                    <div className="modal-section">
+                                        <h3>Full Job Description</h3>
+                                        <a
+                                            href={selectedJob.jd_pdf_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="download-jd-btn"
+                                        >
+                                            📄 Download JD (PDF)
+                                        </a>
+                                    </div>
+                                )}
+
+                                <div className="modal-actions">
+                                    {selectedJob.application_status ? (
+                                        selectedJob.test_id && !selectedJob.test_completed ? (
+                                            <button
+                                                className="btn-start-test"
+                                                onClick={() => {
+                                                    closeJobDetails();
+                                                    handleStartAssessment(selectedJob.id);
+                                                }}
+                                            >
+                                                Start Assessment
+                                            </button>
+                                        ) : (
+                                            <button className="btn-applied" disabled>
+                                                {selectedJob.test_completed ? '✓ Completed' : 'Applied'}
+                                            </button>
+                                        )
+                                    ) : (
+                                        <button
+                                            className="btn-apply-job"
+                                            onClick={async () => {
+                                                await handleApply(selectedJob.id);
+                                                closeJobDetails();
+                                            }}
+                                        >
+                                            Apply Now
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="modal-error">Failed to load job details</div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

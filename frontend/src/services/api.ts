@@ -98,6 +98,11 @@ export const jobsApi = {
         const response = await api.post(`/jobs/${jobId}/start-assessment`);
         return response.data;
     },
+
+    getJobDetails: async (jobId: number) => {
+        const response = await api.get(`/jobs/${jobId}`);
+        return response.data;
+    },
 };
 
 // Courses API
@@ -343,6 +348,14 @@ export const adminApiService = {
     },
     deleteJob: async (jobId: number) => {
         const response = await adminApi.delete(`/jobs/${jobId}`);
+        return response.data;
+    },
+    uploadJobJD: async (jobId: number, file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await adminApi.post(`/jobs/${jobId}/upload-jd`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
         return response.data;
     },
 

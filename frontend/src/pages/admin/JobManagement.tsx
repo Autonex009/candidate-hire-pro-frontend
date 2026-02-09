@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { adminApiService } from '../../services/api';
-import { Plus, Briefcase, MapPin, Users, Check, X } from 'lucide-react';
+import { Plus, Briefcase, MapPin, Users, Check, X, Upload, FileText } from 'lucide-react';
 import './JobManagement.css';
 
 interface Job {
@@ -13,6 +13,9 @@ interface Job {
     is_active: boolean;
     created_at: string;
     applications: number;
+    description?: string;
+    jd_pdf_url?: string;
+    test_id?: number;
 }
 
 interface Division {
@@ -30,9 +33,11 @@ interface Assessment {
 export default function JobManagement() {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [showModal, setShowModal] = useState(false);
+    const [editingJob, setEditingJob] = useState<Job | null>(null);
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [tests, setTests] = useState<Assessment[]>([]);
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ open: boolean; job: Job | null }>({ open: false, job: null });
 
     // Form state
@@ -47,6 +52,9 @@ export default function JobManagement() {
     });
     const [selectedDivision, setSelectedDivision] = useState<number | null>(null);
     const [selectedTestId, setSelectedTestId] = useState<number | null>(null);
+    const [jdFile, setJdFile] = useState<File | null>(null);
+    const [uploadingJd, setUploadingJd] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch data on mount
     useEffect(() => {
@@ -131,6 +139,69 @@ export default function JobManagement() {
         setFormData({ title: '', company: 'Autonex AI', location: '', type: 'Full Time', ctc: '', description: '', payPerApprox: '' });
         setSelectedDivision(null);
         setSelectedTestId(null);
+        setEditingJob(null);
+        setJdFile(null);
+    };
+
+    const handleJdUpload = async (jobId: number) => {
+        if (!jdFile) return;
+        try {
+            setUploadingJd(true);
+            await adminApiService.uploadJobJD(jobId, jdFile);
+            setJdFile(null);
+            fetchJobs();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to upload JD');
+        } finally {
+            setUploadingJd(false);
+        }
+    };
+
+    const handleEditJob = (job: Job) => {
+        setEditingJob(job);
+        setFormData({
+            title: job.role,
+            company: job.company_name,
+            location: job.location || '',
+            type: job.job_type,
+            ctc: job.ctc?.toString() || '',
+            description: job.description || '',
+            payPerApprox: ''
+        });
+        setSelectedTestId(job.test_id || null);
+        setShowModal(true);
+    };
+
+    const handleUpdateJob = async () => {
+        if (!editingJob) return;
+        if (!formData.title.trim()) {
+            alert('Please enter a job title');
+            return;
+        }
+
+        try {
+            setSaving(true);
+            await adminApiService.updateJob(editingJob.id, {
+                company_name: formData.company,
+                role: formData.title,
+                location: formData.location || undefined,
+                ctc: formData.ctc ? parseFloat(formData.ctc) : undefined,
+                job_type: formData.type,
+            });
+
+            // Upload JD PDF if selected
+            if (jdFile) {
+                await adminApiService.uploadJobJD(editingJob.id, jdFile);
+            }
+
+            setShowModal(false);
+            resetForm();
+            fetchJobs();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to update job');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleDeleteJob = async (job: Job) => {
@@ -233,20 +304,22 @@ export default function JobManagement() {
                                 <button className="btn-outline" onClick={(e) => { e.stopPropagation(); handleDeleteJob(job); }}>
                                     Delete
                                 </button>
-                                <button className="btn-primary-sm">View Details</button>
+                                <button className="btn-primary-sm" onClick={(e) => { e.stopPropagation(); handleEditJob(job); }}>
+                                    View / Edit
+                                </button>
                             </div>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* Create Job Modal */}
+            {/* Create/Edit Job Modal */}
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
                     <div className="modal modal-large" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h2>Create New Job</h2>
-                            <button className="close-btn" onClick={() => setShowModal(false)}>
+                            <h2>{editingJob ? 'Edit Job' : 'Create New Job'}</h2>
+                            <button className="close-btn" onClick={() => { setShowModal(false); resetForm(); }}>
                                 <X size={20} />
                             </button>
                         </div>
@@ -371,14 +444,57 @@ export default function JobManagement() {
                                 </div>
                             )}
                         </div>
-                        <div className="modal-footer">
-                            <button className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                            <button className="btn-primary" onClick={handleCreateJob}>
-                                Create Job
-                            </button>
+
+                        {/* JD PDF Upload */}
+                        <div className="form-section">
+                            <h3>4. Job Description PDF (Optional)</h3>
+                            <div className="jd-upload-section">
+                                {editingJob?.jd_pdf_url && !jdFile && (
+                                    <div className="existing-jd">
+                                        <FileText size={20} />
+                                        <a href={editingJob.jd_pdf_url} target="_blank" rel="noopener noreferrer">
+                                            View current JD
+                                        </a>
+                                    </div>
+                                )}
+                                <input
+                                    type="file"
+                                    accept=".pdf"
+                                    ref={fileInputRef}
+                                    style={{ display: 'none' }}
+                                    onChange={(e) => setJdFile(e.target.files?.[0] || null)}
+                                />
+                                <button
+                                    type="button"
+                                    className="btn-upload-jd"
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <Upload size={18} />
+                                    {jdFile ? jdFile.name : 'Upload JD PDF'}
+                                </button>
+                                {jdFile && (
+                                    <button
+                                        type="button"
+                                        className="btn-clear-jd"
+                                        onClick={() => setJdFile(null)}
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
                         </div>
+                    <div className="modal-footer">
+                        <button className="btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>Cancel</button>
+                        <button
+                            className="btn-primary"
+                            onClick={editingJob ? handleUpdateJob : handleCreateJob}
+                            disabled={saving}
+                        >
+                            {saving ? 'Saving...' : (editingJob ? 'Update Job' : 'Create Job')}
+                        </button>
                     </div>
                 </div>
+            </div>
             )}
 
             {/* Delete Confirmation Modal */}
