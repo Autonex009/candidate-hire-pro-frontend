@@ -74,6 +74,11 @@ const Leaderboard = () => {
         return name.charAt(0).toUpperCase();
     };
 
+    // Generate fallback avatar URL (consistent with Profile/Dashboard)
+    const getAvatarUrl = (name: string | null | undefined): string => {
+        return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&size=64&background=3b82f6&color=fff&bold=true`;
+    };
+
     // Safe percentage display (cap at 100)
     const formatPercentage = (pct: number | null | undefined): string => {
         if (pct === null || pct === undefined) return '0';
@@ -174,11 +179,11 @@ const Leaderboard = () => {
                         >
                             <div className="podium-rank">{getRankIcon(entry.rank)}</div>
                             <div className="podium-avatar">
-                                {entry.profile_image ? (
-                                    <img src={entry.profile_image} alt={entry.display_name || 'User'} className="avatar-img" />
-                                ) : (
-                                    getInitial(entry.display_name)
-                                )}
+                                <img
+                                    src={entry.profile_image || getAvatarUrl(entry.display_name)}
+                                    alt={entry.display_name || 'User'}
+                                    className="avatar-img"
+                                />
                             </div>
                             <div className="podium-name">
                                 {entry.display_name || 'Anonymous'}
@@ -225,11 +230,11 @@ const Leaderboard = () => {
                                 <td className="col-name">
                                     <div className="name-cell">
                                         <div className="avatar-small">
-                                            {entry.profile_image ? (
-                                                <img src={entry.profile_image} alt={entry.display_name || 'User'} className="avatar-img" />
-                                            ) : (
-                                                getInitial(entry.display_name)
-                                            )}
+                                            <img
+                                                src={entry.profile_image || getAvatarUrl(entry.display_name)}
+                                                alt={entry.display_name || 'User'}
+                                                className="avatar-img"
+                                            />
                                         </div>
                                         <span className="name-text">
                                             {entry.display_name || 'Anonymous'}
