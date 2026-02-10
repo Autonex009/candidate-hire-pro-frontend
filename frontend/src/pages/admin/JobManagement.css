@@ -209,6 +209,41 @@
     cursor: pointer;
 }
 
+.btn-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    padding: 10px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-toggle:hover {
+    background: #fef3c7;
+    border-color: #fcd34d;
+    color: #d97706;
+}
+
+.btn-toggle.active {
+    background: #dcfce7;
+    border-color: #86efac;
+    color: #16a34a;
+}
+
+.btn-toggle.active:hover {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #dc2626;
+}
+
 /* Buttons */
 .btn-primary {
     display: flex;

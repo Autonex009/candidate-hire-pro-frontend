@@ -45,6 +45,7 @@ export interface Job {
     role: string;
     location?: string;
     ctc?: number;
+    ctc_is_upto?: boolean;
     job_type: string;
     offer_type: OfferType;
     round_date?: string;

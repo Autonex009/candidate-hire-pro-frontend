@@ -326,6 +326,7 @@ export const adminApiService = {
         role: string;
         location?: string;
         ctc?: number;
+        ctc_is_upto?: boolean;
         job_type?: string;
         round_date?: string;
         description?: string;
@@ -339,6 +340,7 @@ export const adminApiService = {
         role?: string;
         location?: string;
         ctc?: number;
+        ctc_is_upto?: boolean;
         job_type?: string;
         is_active?: boolean;
         round_date?: string;
@@ -356,6 +358,10 @@ export const adminApiService = {
         const response = await adminApi.post(`/jobs/${jobId}/upload-jd`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
+        return response.data;
+    },
+    toggleJobActive: async (jobId: number) => {
+        const response = await adminApi.patch(`/jobs/${jobId}/toggle-active`);
         return response.data;
     },
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { adminApiService } from '../../services/api';
-import { Plus, Briefcase, MapPin, Users, Check, X, Upload, FileText } from 'lucide-react';
+import { Plus, Briefcase, MapPin, Users, Check, X, Upload, FileText, Power } from 'lucide-react';
 import './JobManagement.css';
 
 interface Job {
@@ -9,6 +9,7 @@ interface Job {
     role: string;
     location?: string;
     ctc?: number;
+    ctc_is_upto?: boolean;
     job_type: string;
     is_active: boolean;
     created_at: string;
@@ -47,6 +48,7 @@ export default function JobManagement() {
         location: '',
         type: 'Full Time',
         ctc: '',
+        ctcIsUpto: false,
         description: '',
         payPerApprox: ''
     });
@@ -64,7 +66,7 @@ export default function JobManagement() {
 
     const fetchJobs = async () => {
         try {
-            const data = await adminApiService.getJobs();
+            const data = await adminApiService.getJobs(true); // Include inactive jobs
             setJobs(data);
         } catch (error) {
             console.error('Failed to fetch jobs:', error);
@@ -121,6 +123,7 @@ export default function JobManagement() {
                 role: formData.title,
                 location: formData.location || undefined,
                 ctc: formData.ctc ? parseFloat(formData.ctc) : undefined,
+                ctc_is_upto: formData.ctcIsUpto,
                 job_type: formData.type,
                 description: formData.description || undefined,
                 test_id: selectedTestId || undefined
@@ -135,7 +138,7 @@ export default function JobManagement() {
     };
 
     const resetForm = () => {
-        setFormData({ title: '', company: 'Autonex AI', location: '', type: 'Full Time', ctc: '', description: '', payPerApprox: '' });
+        setFormData({ title: '', company: 'Autonex AI', location: '', type: 'Full Time', ctc: '', ctcIsUpto: false, description: '', payPerApprox: '' });
         setSelectedDivision(null);
         setSelectedTestId(null);
         setEditingJob(null);
@@ -150,6 +153,7 @@ export default function JobManagement() {
             location: job.location || '',
             type: job.job_type,
             ctc: job.ctc?.toString() || '',
+            ctcIsUpto: job.ctc_is_upto || false,
             description: job.description || '',
             payPerApprox: ''
         });
@@ -171,6 +175,7 @@ export default function JobManagement() {
                 role: formData.title,
                 location: formData.location || undefined,
                 ctc: formData.ctc ? parseFloat(formData.ctc) : undefined,
+                ctc_is_upto: formData.ctcIsUpto,
                 job_type: formData.type,
             });
 
@@ -203,6 +208,15 @@ export default function JobManagement() {
             alert('Failed to delete job');
         } finally {
             setDeleteModal({ open: false, job: null });
+        }
+    };
+
+    const handleToggleActive = async (job: Job) => {
+        try {
+            await adminApiService.toggleJobActive(job.id);
+            fetchJobs();
+        } catch (error) {
+            alert('Failed to toggle job status');
         }
     };
 
@@ -282,10 +296,18 @@ export default function JobManagement() {
                             </div>
 
                             {job.ctc && (
-                                <div className="job-ctc">₹{job.ctc} LPA</div>
+                                <div className="job-ctc">{job.ctc_is_upto ? 'Upto ' : ''}₹{job.ctc} LPA</div>
                             )}
 
                             <div className="job-card-actions">
+                                <button
+                                    className={`btn-toggle ${job.is_active ? 'active' : ''}`}
+                                    onClick={(e) => { e.stopPropagation(); handleToggleActive(job); }}
+                                    title={job.is_active ? 'Deactivate Job' : 'Activate Job'}
+                                >
+                                    <Power size={16} />
+                                    {job.is_active ? 'Deactivate' : 'Activate'}
+                                </button>
                                 <button className="btn-outline" onClick={(e) => { e.stopPropagation(); handleDeleteJob(job); }}>
                                     Delete
                                 </button>
@@ -370,6 +392,15 @@ export default function JobManagement() {
                                             onChange={e => setFormData(p => ({ ...p, ctc: e.target.value }))}
                                             placeholder="e.g. 4.5"
                                         />
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.ctcIsUpto}
+                                                onChange={e => setFormData(p => ({ ...p, ctcIsUpto: e.target.checked }))}
+                                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                            />
+                                            Upto (display as "Upto X LPA")
+                                        </label>
                                     </div>
                                     <div className="form-group">
                                         <label>Pay Per Approx (₹/task)</label>
@@ -468,18 +499,18 @@ export default function JobManagement() {
                                 )}
                             </div>
                         </div>
-                    <div className="modal-footer">
-                        <button className="btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>Cancel</button>
-                        <button
-                            className="btn-primary"
-                            onClick={editingJob ? handleUpdateJob : handleCreateJob}
-                            disabled={saving}
-                        >
-                            {saving ? 'Saving...' : (editingJob ? 'Update Job' : 'Create Job')}
-                        </button>
+                        <div className="modal-footer">
+                            <button className="btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>Cancel</button>
+                            <button
+                                className="btn-primary"
+                                onClick={editingJob ? handleUpdateJob : handleCreateJob}
+                                disabled={saving}
+                            >
+                                {saving ? 'Saving...' : (editingJob ? 'Update Job' : 'Create Job')}
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
             )}
 
             {/* Delete Confirmation Modal */}

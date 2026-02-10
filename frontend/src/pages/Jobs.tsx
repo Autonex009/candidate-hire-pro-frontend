@@ -166,7 +166,7 @@ export default function Jobs() {
                                     <div className="job-card-footer">
                                         <div className="ctc-info">
                                             <span className="label">Package</span>
-                                            <span className="value">₹{job.ctc} LPA</span>
+                                            <span className="value">{job.ctc_is_upto ? 'Upto ' : ''}₹{job.ctc} LPA</span>
                                         </div>
                                         <span className={`offer-badge ${getOfferTypeClass(job.offer_type)}`}>
                                             {formatOfferType(job.offer_type)}
@@ -282,7 +282,7 @@ export default function Jobs() {
                                 <div className="modal-meta">
                                     <span className="meta-item">📍 {selectedJob.location || 'Remote'}</span>
                                     <span className="meta-item">💼 {selectedJob.job_type}</span>
-                                    <span className="meta-item">💰 ₹{selectedJob.ctc} LPA</span>
+                                    <span className="meta-item">💰 {selectedJob.ctc_is_upto ? 'Upto ' : ''}₹{selectedJob.ctc} LPA</span>
                                     <span className={`offer-badge ${getOfferTypeClass(selectedJob.offer_type)}`}>
                                         {formatOfferType(selectedJob.offer_type)}
                                     </span>
